@@ -1,0 +1,5 @@
+Channel                    Group                 Category            
+PJSIP/apiu-e72fd50408-00000004  701                   apiudst             
+PJSIP/apiu-e72fd50408-00000004  pub                   apiunet             
+PJSIP/apiu-e72fd50408-00000004  ue83fbe               apiusers            
+3 active channels

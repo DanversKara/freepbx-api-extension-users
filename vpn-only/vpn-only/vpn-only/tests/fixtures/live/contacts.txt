@@ -1,0 +1,11 @@
+
+  Contact:  <Aor/ContactUri..............................> <Hash....> <Status> <RTT(ms)..>
+==========================================================================================
+
+  Contact:  701/sip:701@127.0.0.1:6005                     df1f985ff9 NonQual         nan
+  Contact:  apiu-025dfd2d93/sip:apiu-025dfd2d93@127.0.0.1: 92cc597720 Avail       460.679
+  Contact:  apiu-e72fd50408/sip:apiu-e72fd50408@127.0.0.1: a87f22e855 Unavail         nan
+  Contact:  apiu-e72fd50408/sip:apiu-e72fd50408@127.0.0.1: 70e518e191 Unavail         nan
+
+Objects found: 4
+
