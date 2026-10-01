@@ -1,0 +1,27 @@
+#!/usr/bin/env php
+<?php
+/**
+ * apiusers-presence – records API-user sign-ins / sign-outs for the Live view.
+ *
+ * Installed to /usr/local/sbin/apiusers-presence by install-pbx.sh / update-pbx.sh and run
+ * once a minute by /etc/cron.d/apiusers (as the asterisk user), so the sign-in history
+ * keeps filling in while nobody has the page open. The Live page also records changes
+ * every time it refreshes. Prints nothing unless something fails.
+ */
+
+if (PHP_SAPI !== 'cli') { exit(1); }
+
+$bootstrap_settings = ['freepbx_auth' => false, 'cdrdb' => false];
+ob_start();
+include '/etc/freepbx.conf';
+ob_end_clean();
+
+try {
+    $events = \FreePBX::Apiusers()->presenceTick();
+    if (in_array('-v', $argv, true)) {
+        echo count($events), " change(s)\n";
+    }
+} catch (\Throwable $e) {
+    fwrite(STDERR, 'apiusers-presence: ' . $e->getMessage() . "\n");
+    exit(1);
+}

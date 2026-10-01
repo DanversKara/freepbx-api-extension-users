@@ -79,7 +79,7 @@ class Engine
 
     /**
      * Run one operation. Returns ['ok'=>bool, ...]. Mutates internal state on success.
-     * $op: list|get|create|update|delete|rotate|reveal|kill|unkill|settings|audit
+     * $op: list|get|create|update|delete|rotate|reveal|kill|unkill|settings|audit|hangup|disa_unlock
      */
     public function run(string $op, array $args, string $source, string $actor = ''): array
     {
@@ -140,6 +140,21 @@ class Engine
                 return $this->updateSettings($args, $source, $actor);
             case 'audit':
                 return ['ok' => true, 'audit' => array_slice($this->state['audit'], -100)];
+            case 'hangup': // end one API user's call (Live view). Allowed remotely: it only stops things.
+                $ch = (string)($args['channel'] ?? '');
+                if (!preg_match('#^PJSIP/(apiu-[0-9a-f]+)-[0-9a-f]+$#', $ch, $m)) return self::err('not an API user call');
+                foreach ($this->state['users'] as $u) {
+                    if ($u['sip_user'] === $m[1]) {
+                        $this->audit($source, $actor, 'hangup', $u['id'], $ch);
+                        return ['ok' => true, 'channel' => $ch];
+                    }
+                }
+                return self::err('not an API user call');
+            case 'disa_unlock': // local only (guarded above): clear a 5-wrong-PINs lockout early
+                $id = (string)($args['id'] ?? '');
+                if (empty($this->state['users'][$id]['public'])) return self::err('no such Public account');
+                $this->audit($source, $actor, 'disa_unlock', $id, 'DISA lockout cleared');
+                return ['ok' => true, 'id' => $id];
         }
         return self::err('unknown op');
     }
@@ -149,7 +164,7 @@ class Engine
     {
         $s = $this->state['settings'];
         if (!$s['remote_enabled']) return 'remote control is disabled on the PBX';
-        if (in_array($op, ['reveal', 'unkill', 'settings'], true)) {
+        if (in_array($op, ['reveal', 'unkill', 'settings', 'disa_unlock'], true)) {
             return "'$op' is only allowed from the PBX page (VPN/LAN)";
         }
         if (!$s['safety_lock']) return null;

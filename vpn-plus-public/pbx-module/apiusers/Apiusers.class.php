@@ -17,9 +17,11 @@ namespace FreePBX\modules;
 
 require_once __DIR__ . '/lib/Engine.php';
 require_once __DIR__ . '/lib/ConfigGen.php';
+require_once __DIR__ . '/lib/Live.php';
 
 use ApiUsers\Engine;
 use ApiUsers\ConfigGen;
+use ApiUsers\Live;
 
 class Apiusers extends \FreePBX_Helpers implements \BMO
 {
@@ -28,7 +30,10 @@ class Apiusers extends \FreePBX_Helpers implements \BMO
     public const DIALPLAN_FILE = 'extensions_apiusers.conf';
 
     /** ops the Docker panel may call. Engine::remoteGuard() enforces the safety lock on top. */
-    public const REMOTE_OPS = ['list', 'get', 'create', 'update', 'delete', 'rotate', 'kill', 'audit', 'calls'];
+    public const REMOTE_OPS = ['list', 'get', 'create', 'update', 'delete', 'rotate', 'kill', 'audit', 'calls', 'live', 'hangup'];
+
+    /** How many sign-in / sign-out events to keep (table apiusers_kv, key 'signins'). */
+    public const SIGNIN_KEEP = 300;
 
     public $FreePBX;
     public $db;
@@ -66,6 +71,18 @@ class Apiusers extends \FreePBX_Helpers implements \BMO
         $this->db->query('DROP TABLE IF EXISTS ' . self::TABLE);
     }
 
+    /** FreePBX ajax.php?module=apiusers&command=live (read-only, used by the Live section to refresh). */
+    public function ajaxRequest($req, &$setting)
+    {
+        return $req === 'live';
+    }
+
+    public function ajaxHandler()
+    {
+        if (($_REQUEST['command'] ?? '') === 'live') return $this->live();
+        return ['ok' => false, 'error' => 'unknown command'];
+    }
+
     public function backup() {}
     public function restore($backup) {}
     public function doConfigPageInit($page) {}
@@ -90,9 +107,25 @@ class Apiusers extends \FreePBX_Helpers implements \BMO
 
     public function saveState(array $st): void
     {
+        $this->kvSet('state', $st, true);
+    }
+
+    /** Extra rows in the same table: 'presence' (who is signed in) and 'signins' (history). */
+    private function kvGet(string $k): array
+    {
+        $this->ensureTable();
+        $stmt = $this->db->prepare('SELECT v FROM ' . self::TABLE . ' WHERE k = ?');
+        $stmt->execute([$k]);
+        $v = $stmt->fetchColumn();
+        $d = $v ? json_decode($v, true) : [];
+        return is_array($d) ? $d : [];
+    }
+
+    private function kvSet(string $k, array $v, bool $pretty = false): void
+    {
         $this->ensureTable();
         $stmt = $this->db->prepare('REPLACE INTO ' . self::TABLE . ' (k, v) VALUES (?, ?)');
-        $stmt->execute(['state', json_encode($st, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)]);
+        $stmt->execute([$k, json_encode($v, ($pretty ? JSON_PRETTY_PRINT : 0) | JSON_UNESCAPED_SLASHES)]);
     }
 
     /** Real FreePBX extensions (for the allowed-extension picker / validation). */
@@ -237,6 +270,146 @@ class Apiusers extends \FreePBX_Helpers implements \BMO
         }
     }
 
+    // --------------------------------------------------------------- live
+
+    /**
+     * Run one Asterisk CLI command. Uses FreePBX's AMI connection ("Command" action);
+     * falls back to `asterisk -rx` (the web server, cron job and apiusers-remote all
+     * run as the asterisk user, which may use the CLI socket).
+     * APIUSERS_AST_CLI env var overrides the CLI binary (used by the sandbox tests).
+     */
+    public function cli(string $cmd): string
+    {
+        $bin = getenv('APIUSERS_AST_CLI');
+        if (!$bin) {
+            $ast = $this->FreePBX->astman ?? null;
+            if ($ast && method_exists($ast, 'connected') && $ast->connected()) {
+                $r = $ast->send_request('Command', ['Command' => $cmd]);
+                if (is_array($r) && isset($r['data']) && trim((string)$r['data']) !== '') return (string)$r['data'];
+            }
+            $bin = is_executable('/usr/sbin/asterisk') ? '/usr/sbin/asterisk' : 'asterisk';
+        }
+        return (string)@shell_exec($bin . ' -rx ' . escapeshellarg($cmd) . ' 2>/dev/null');
+    }
+
+    /** Last ~2 MB of the Asterisk "full" log (for failed sign-ins and wrong DISA PINs). */
+    private function logTail(int $bytes = 2000000): string
+    {
+        $f = getenv('APIUSERS_AST_LOG');
+        if (!$f) {
+            $dir = '';
+            try { $dir = (string)$this->FreePBX->Config->get('ASTLOGDIR'); } catch (\Throwable $e) {}
+            $f = rtrim($dir !== '' ? $dir : '/var/log/asterisk', '/') . '/full';
+        }
+        $h = @fopen($f, 'rb');
+        if (!$h) return '';
+        $size = (int)@filesize($f);
+        if ($size > $bytes) { fseek($h, $size - $bytes); fgets($h); }   // drop the partial first line
+        $data = (string)stream_get_contents($h);
+        fclose($h);
+        return $data;
+    }
+
+    /** Signed-in phones right now (two CLI calls). */
+    public function devices(?array $st = null): array
+    {
+        $st = $st ?? $this->loadState();
+        return Live::devices($this->cli('database show registrar'), $this->cli('pjsip show contacts'), $st['users'], time());
+    }
+
+    /**
+     * Record sign-ins / sign-outs by comparing who is signed in now with the last snapshot.
+     * Called by every Live refresh and once a minute by cron (bin/apiusers-presence), so the
+     * history fills in even when nobody has the page open. A MySQL named lock keeps the page
+     * and cron from writing the same event twice.
+     */
+    public function presenceTick(?array $devices = null, ?array $st = null): array
+    {
+        $devices = $devices ?? $this->devices($st);
+        $locked = false;
+        try {
+            $q = $this->db->query("SELECT GET_LOCK('apiusers_presence', 3)");
+            $locked = $q && (int)$q->fetchColumn() === 1;
+        } catch (\Throwable $e) { /* no named locks (tests): carry on */ }
+        try {
+            [$next, $events] = Live::presence($this->kvGet('presence'), $devices, time());
+            $this->kvSet('presence', $next);
+            if ($events) {
+                $log = $this->kvGet('signins');
+                foreach ($events as $ev) $log[] = $ev;
+                if (count($log) > self::SIGNIN_KEEP) $log = array_slice($log, -self::SIGNIN_KEEP);
+                $this->kvSet('signins', $log);
+            }
+            return $events;
+        } finally {
+            if ($locked) { try { $this->db->query("SELECT RELEASE_LOCK('apiusers_presence')"); } catch (\Throwable $e) {} }
+        }
+    }
+
+    /**
+     * Everything the Live section shows. Read-only apart from the sign-in history.
+     * Shape: {ok, now, devices[], calls[], signins[], failed[], disa_locks{}, kill_switch, warning?}
+     */
+    public function live(): array
+    {
+        $st = $this->loadState();
+        $s = $st['settings'];
+        $now = time();
+        $registrar = $this->cli('database show registrar');
+        $contacts = $this->cli('pjsip show contacts');
+        $warning = '';
+        if (trim($registrar . $contacts) === '') {
+            $warning = 'Asterisk did not answer (is it running?). Live data is empty.';
+        }
+        $devices = Live::devices($registrar, $contacts, $st['users'], $now);
+        $calls = Live::calls($this->cli('core show channels concise'), $this->cli('group show channels'), $st['users'], $devices);
+        $this->presenceTick($devices, $st);
+        $since = [];
+        foreach (($this->kvGet('presence')['devices'] ?? []) as $k => $p) $since[$k] = (int)$p['since'];
+        foreach ($devices as &$d) $d['since'] = $since[$d['key']] ?? null;
+        unset($d);
+        $failed = Live::failures($this->logTail(), $st['users'], (string)$s['gateway_ip'],
+            ['vpn' => $s['client_vpn_addr'], 'lan' => $s['client_lan_addr'], 'pub' => $s['client_pub_addr']]);
+        $locks = Live::disaLocks($this->cli('database show apiusers_disa'), $now);
+        return [
+            'ok' => true, 'now' => $now, 'warning' => $warning,
+            'devices' => $devices, 'calls' => $calls,
+            'signins' => array_slice(array_reverse($this->kvGet('signins')), 0, 60),
+            'failed' => $failed, 'disa_locks' => $locks,
+            'kill_switch' => !empty($s['kill_switch']),
+            'users' => array_values(array_map(fn($u) => ['id' => $u['id'], 'name' => $u['name'],
+                'public' => !empty($u['public']), 'enabled' => !empty($u['enabled'])], $st['users'])),
+        ];
+    }
+
+    /**
+     * Hang up one API user's call. Only channels named PJSIP/apiu-... that are up right now
+     * can be hung up (checked here and in Engine). Allowed remotely: it only ends things.
+     */
+    public function hangupCall(string $channel, string $source, string $actor): array
+    {
+        if (!preg_match('#^PJSIP/apiu-[0-9a-f]+-[0-9a-f]+$#', $channel)) return ['ok' => false, 'error' => 'not an API user call'];
+        $live = false;
+        foreach (Live::channels($this->cli('core show channels concise')) as $r) {
+            if ($r['channel'] === $channel) { $live = true; break; }
+        }
+        if (!$live) return ['ok' => false, 'error' => 'that call has already ended'];
+        $r = $this->op('hangup', ['channel' => $channel], $source, $actor);
+        if (!empty($r['ok'])) $this->cli('channel request hangup ' . $channel);
+        return $r;
+    }
+
+    /** Clear a DISA lockout (5 wrong PINs) before the hour is up. PBX page only (Engine guard). */
+    public function unlockDisa(string $id, string $source, string $actor): array
+    {
+        $r = $this->op('disa_unlock', ['id' => $id], $source, $actor);
+        if (!empty($r['ok']) && preg_match('/^u[0-9a-f]+$/', $id)) {
+            $this->cli("database del apiusers_disa {$id}_lock");
+            $this->cli("database put apiusers_disa {$id}_fails 0");
+        }
+        return $r;
+    }
+
     // ------------------------------------------------------------- remote
 
     /**
@@ -259,6 +432,14 @@ class Apiusers extends \FreePBX_Helpers implements \BMO
         if ($op === 'calls') {
             if (empty($st['settings']['remote_enabled'])) return ['ok' => false, 'error' => 'remote control is disabled on the PBX'];
             return $this->calls((string)($args['id'] ?? ''));
+        }
+        if ($op === 'live') {
+            if (empty($st['settings']['remote_enabled'])) return ['ok' => false, 'error' => 'remote control is disabled on the PBX'];
+            return $this->live();
+        }
+        if ($op === 'hangup') {
+            if (empty($st['settings']['remote_enabled'])) return ['ok' => false, 'error' => 'remote control is disabled on the PBX'];
+            return $this->hangupCall((string)($args['channel'] ?? ''), 'remote', $actor);
         }
         return $this->op($op, $args, 'remote', $actor);
     }

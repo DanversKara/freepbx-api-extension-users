@@ -2,13 +2,14 @@
 	<rawname>apiusers</rawname>
 	<repo>local</repo>
 	<name>API Users</name>
-	<version>17.0.1</version>
+	<version>17.0.2</version>
 	<publisher>Local</publisher>
 	<license>GPLv3+</license>
 	<licenselink>https://www.gnu.org/licenses/gpl-3.0.txt</licenselink>
 	<category>Applications</category>
 	<description>Locked-down SIP accounts (internal / external / 911 / international + extension whitelist) that only work through the Kamailio gateway. Managed here or from the remote Docker panel (with safety lock).</description>
 	<changelog>
+		*17.0.2* Live view: signed-in phones, calls in progress + hang up, sign-in history, failed sign-ins, DISA unlock
 		*17.0.1* Initial release
 	</changelog>
 	<menuitems>

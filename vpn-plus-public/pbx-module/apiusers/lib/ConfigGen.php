@@ -130,6 +130,8 @@ class ConfigGen
 ; ARG1=user id  ARG2=1 if this user may use the public (no-VPN) door
 [apiusers-netcheck]
 exten => s,1,Set(GWNET=${PJSIP_HEADER(read,X-Gw-Net)})
+ ; Live view: remember the door on this channel (GROUP is dropped automatically at hangup)
+ same => n,Set(GROUP(apiunet)=${IF($["${GWNET}" = ""]?unknown:${GWNET})})
  same => n,GotoIf($["${GWNET}" = "pub" & "${ARG2}" != "1"]?deny)
  same => n,Return()
  same => n(deny),Gosub(apiusers-deny,s,1(no-vpn-not-allowed))
@@ -137,8 +139,10 @@ exten => s,1,Set(GWNET=${PJSIP_HEADER(read,X-Gw-Net)})
 
 ; Called first on every permitted outbound attempt.
 ; ARG1=user id  ARG2=max simultaneous calls  ARG3=max seconds (0 = none)  ARG4=public allowed (0/1)
+; ARG5=number the user dialed (shown in the Live view)
 [apiusers-pre]
-exten => s,1,NoOp(API user ${ARG1} outbound attempt)
+exten => s,1,NoOp(API user ${ARG1} outbound attempt to ${ARG5})
+ same => n,ExecIf($["${ARG5}" != ""]?Set(GROUP(apiudst)=${ARG5}))
  same => n,Gosub(apiusers-netcheck,s,1(${ARG1},${ARG4}))
  same => n,Set(GROUP(apiusers)=${ARG1})
  same => n,GotoIf($[${GROUP_COUNT(${ARG1}@apiusers)} > ${ARG2}]?busy)
@@ -199,6 +203,7 @@ exten => s,1,Answer()
  same => n,Set(CDR(userfield)=apiusers:${DISA_ID}:disa)
  same => n,Read(NUM,dial,11,i,1,15)
  same => n,GotoIf($["${NUM}" = ""]?bye)
+ same => n,Set(GROUP(apiudst)=DISA-${NUM})
  same => n,Goto(apiusers-disa-out,${NUM},1)
  same => n(bye),Hangup()
 
@@ -251,7 +256,7 @@ EOT;
         $id = $u['id'];
         $maxSec = (int)$u['max_minutes'] * 60;
         $pub = !empty($u['public']) ? 1 : 0;
-        $pre = "Gosub(apiusers-pre,s,1($id,{$u['max_calls']},$maxSec,$pub))";
+        $pre = "Gosub(apiusers-pre,s,1($id,{$u['max_calls']},$maxSec,$pub,\${EXTEN}))";
         $deny = fn($why) => "Gosub(apiusers-deny,s,1($why))";
         $c = "; ==== {$u['name']} – " . self::summary($u) . " ====\n[apiusers-$id]\n";
 
@@ -315,6 +320,7 @@ EOT;
                 // Emergency calls skip the concurrency/time limits on purpose.
                 $c .= "exten => $e,1,NoOp(EMERGENCY call from API user {$u['name']} - uses PBX E911 address)\n"
                     . " same => n,Gosub(apiusers-netcheck,s,1($id,$pub))\n"
+                    . " same => n,Set(GROUP(apiudst)=$e)\n"
                     . " same => n,Set(TRANSFER_CONTEXT=apiusers-notransfer)\n"
                     . " same => n,Set(DIAL_OPTIONS=tr)\n"
                     . " same => n,Set(TRUNK_OPTIONS=I)\n"

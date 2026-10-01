@@ -93,9 +93,9 @@ ok(!$e2->run('update', ['id' => $pid, 'public' => false], 'remote')['ok'], 'acco
 ok(!$e2->run('update', ['id' => $pid, 'public' => false], 'local')['ok'], 'account type cannot change (local/admin)');
 $dp2 = ConfigGen::dialplan($e2->state());
 ok(strpos($dp2, '[apiusers-netcheck]') !== false, 'netcheck context generated');
-ok(strpos($dp2, "Gosub(apiusers-pre,s,1($pid,1,7200,1))") !== false, 'public user passes ARG4=1');
+ok(strpos($dp2, "Gosub(apiusers-pre,s,1($pid,1,7200,1,\${EXTEN}))") !== false, 'public user passes ARG4=1');
 $r3 = $e2->run('create', ['name' => 'NoPub', 'allowed' => ['701']], 'local');
-ok(strpos(ConfigGen::dialplan($e2->state()), "Gosub(apiusers-pre,s,1({$r3['user']['id']},1,7200,0))") !== false, 'non-public user passes ARG4=0');
+ok(strpos(ConfigGen::dialplan($e2->state()), "Gosub(apiusers-pre,s,1({$r3['user']['id']},1,7200,0,\${EXTEN}))") !== false, 'non-public user passes ARG4=0');
 
 // ---- public accounts are locked down for good; DISA is the only way out ----
 ok(!$e2->run('update', ['id' => $pid, 'external' => true], 'local')['ok'], 'admin cannot give a public account External');
@@ -131,7 +131,7 @@ file_put_contents(sys_get_temp_dir() . '/apiusers_disa_state.json', json_encode(
 $legacy = ['settings' => [], 'users' => ['uold' => ['id' => 'uold', 'name' => 'Old', 'sip_user' => 'apiu-old', 'secret' => 'x', 'reach' => 8850,
            'enabled' => true, 'internal' => true, 'external' => false, 'e911' => false, 'international' => false,
            'allowed' => ['701'], 'max_calls' => 1, 'max_minutes' => 60]]];
-ok(strpos(ConfigGen::dialplan(Engine::normalizeState($legacy)), "Gosub(apiusers-pre,s,1(uold,1,3600,0))") !== false, 'legacy user treated as not public');
+ok(strpos(ConfigGen::dialplan(Engine::normalizeState($legacy)), "Gosub(apiusers-pre,s,1(uold,1,3600,0,\${EXTEN}))") !== false, 'legacy user treated as not public');
 
 file_put_contents(sys_get_temp_dir() . '/apiusers_out_pjsip.conf', ConfigGen::pjsip(array_merge($e->state(), ['settings' => array_merge($e->settings(), ['kill_switch' => false])])));
 file_put_contents(sys_get_temp_dir() . '/apiusers_out_extensions.conf', ConfigGen::dialplan(array_merge($e->state(), ['settings' => array_merge($e->settings(), ['kill_switch' => false])])));

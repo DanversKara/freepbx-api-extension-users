@@ -34,7 +34,7 @@
   .checks { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:4px 12px }
   .checks label, .chk { color:var(--ink); font-size:14px; margin:4px 0 }
   .locked { opacity:.6 }
-  .actions { white-space:nowrap } @media (max-width:640px){ .actions { white-space:normal } td,th{ padding:6px 3px } }
+  .actions { white-space:nowrap } @media (max-width:640px){ .actions { white-space:normal } td,th{ padding:6px 3px } .card > table { display:block; overflow-x:auto } }
 </style>
 </head>
 <body><main>
@@ -81,6 +81,14 @@
       <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger">Kill switch</button></form>
   {% endif %}
 </div>
+
+<h2>Live</h2>
+<div class="card" id="apiu-live"><span class="mute">Loading live status…</span></div>
+<script src="/static/live-view.js"></script>
+<script>ApiUsersLive(document.getElementById('apiu-live'), {
+  initial: null, url: '/live.json', interval: 10000,
+  hangup: { url: '/hangup', fields: { csrf: {{ csrf | tojson }} } }
+});</script>
 
 <h2>Users</h2>
 <div class="card" style="padding:4px 10px">

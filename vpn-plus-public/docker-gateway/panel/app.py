@@ -17,7 +17,7 @@ import os
 import secrets
 import subprocess
 
-from flask import Flask, abort, has_request_context, redirect, render_template, request, session
+from flask import Flask, abort, has_request_context, jsonify, redirect, render_template, request, session
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("PANEL_SECRET_KEY") or secrets.token_hex(32)
@@ -163,6 +163,24 @@ def calls(uid):
     if r.get("ok"):
         return page(calls={"id": uid, "rows": r.get("calls", [])})
     return page(err=r.get("error"))
+
+
+@app.get("/live.json")
+def live():
+    # Live view data (signed-in phones, calls, sign-in history, failed sign-ins).
+    # Polled by static/live-view.js every few seconds while the tab is visible.
+    r = pbx("live")
+    resp = jsonify(r if isinstance(r, dict) else {"ok": False, "error": "bad answer from PBX"})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.post("/hangup")
+def hangup():
+    # Ending a call is allowed remotely (it only stops things). The PBX checks the
+    # channel is a live API-user call and writes it to the audit log.
+    r = pbx("hangup", {"channel": request.form.get("channel", "")[:120]})
+    return page(msg="Call ended." if r.get("ok") else None, err=None if r.get("ok") else r.get("error"))
 
 
 @app.errorhandler(405)

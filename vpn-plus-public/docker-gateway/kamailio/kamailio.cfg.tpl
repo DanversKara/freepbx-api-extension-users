@@ -164,6 +164,15 @@ route[FROM_CLIENT] {
 		if (t_check_trans()) { route(RELAY); }
 		exit;
 	}
+	# Only API-user accounts may pass through this gateway. Asterisk picks the endpoint by
+	# the From user or the Authorization username, so without this check someone could try
+	# the PBX's REAL extensions (701, 702 ...) through the gateway / public door.
+	if (!($fU =~ "^apiu-[0-9a-f]+$") || ($au != $null && !($au =~ "^apiu-[0-9a-f]+$"))
+	    || (is_method("REGISTER") && !($tU =~ "^apiu-[0-9a-f]+$"))) {
+		xlog("L_NOTICE", "blocked non-API username from=$fU auth=$au door=$var(net) src=$si:$sp\n");
+		sl_send_reply("403", "Forbidden");
+		exit;
+	}
 	remove_hf("Route");          # never let a client steer us anywhere
 	remove_hf("X-Gw-Net");       # never trust a phone's own label
 	append_hf("X-Gw-Net: $var(net)\r\n");

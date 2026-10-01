@@ -1,0 +1,9 @@
+[Oct  1 16:38:04] NOTICE[464] res_pjsip/pjsip_distributor.c: Request 'REGISTER' from '<sip:admin@127.0.0.1>' failed for '127.0.0.1:5071' (callid: 1-654@127.0.0.1) - No matching endpoint found
+[Oct  1 16:38:04] NOTICE[464] res_pjsip/pjsip_distributor.c: Request 'REGISTER' from '<sip:admin@127.0.0.1>' failed for '127.0.0.1:5071' (callid: 1-654@127.0.0.1) - No matching endpoint found
+[Oct  1 16:38:04] NOTICE[464] res_pjsip/pjsip_distributor.c: Request 'REGISTER' from '<sip:admin@127.0.0.1>' failed for '127.0.0.1:5071' (callid: 1-654@127.0.0.1) - Failed to authenticate
+[Oct  1 16:38:29] NOTICE[464] res_pjsip/pjsip_distributor.c: Request 'INVITE' from '<sip:apiu-e5b05d6ac0@127.0.0.1>' failed for '127.0.0.1:5071' (callid: 1-688@127.0.0.1) - No matching endpoint found
+[Oct  1 16:38:29] NOTICE[464] res_pjsip/pjsip_distributor.c: Request 'INVITE' from '<sip:apiu-e5b05d6ac0@127.0.0.1>' failed for '127.0.0.1:5071' (callid: 1-688@127.0.0.1) - No matching endpoint found
+[Oct  1 16:38:29] NOTICE[464] res_pjsip/pjsip_distributor.c: Request 'INVITE' from '<sip:apiu-e5b05d6ac0@127.0.0.1>' failed for '127.0.0.1:5071' (callid: 1-688@127.0.0.1) - Failed to authenticate
+[2026-10-01 09:20:01] NOTICE[2211][C-0000001a] res_pjsip/pjsip_distributor.c: Request 'INVITE' from '"Bob" <sip:apiu-e72fd50408@198.51.100.20:5080>' failed for '127.0.0.1:5071' (callid: abc@x) - Failed to authenticate
+[2026-10-01 09:21:07] NOTICE[2211] res_pjsip/pjsip_distributor.c: Request 'REGISTER' from '<sip:apiu-e72fd50408@198.51.100.20>' failed for '203.0.113.50:5060' (callid: zzz) - Failed to authenticate
+[2026-10-01 09:22:15] VERBOSE[3311][C-00000020] pbx.c: Executing [s@apiusers-disa:10] NoOp("PJSIP/apiu-e72fd50408-0000001f", "DISA wrong PIN for ue83fbe: 2 in a row") in new stack

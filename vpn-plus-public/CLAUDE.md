@@ -65,6 +65,9 @@ row `state`). Kamailio has no user database, and the panel stores nothing.
 | `pbx-module/apiusers/lib/Engine.php` | All rules: create/update/delete/rotate/kill, validation, **safety lock** (`remoteGuard`), audit. Pure PHP. |
 | `pbx-module/apiusers/lib/ConfigGen.php` | Generates `pjsip_apiusers.conf` + `extensions_apiusers.conf`. Pure PHP. |
 | `pbx-module/apiusers/Apiusers.class.php` | FreePBX BMO glue: DB, write files, AMI reload, hang up, CDR, `remoteCall()` |
+| `pbx-module/apiusers/lib/Live.php` | Live view parsers (pure PHP): `devices()` from `database show registrar` + `pjsip show contacts`, `calls()` from `core show channels concise` + `group show channels`, `failures()` from the `full` log tail, `presence()` diff, `disaLocks()` |
+| `pbx-module/apiusers/assets/live-view.js` | Live view UI (both pages; source copy, synced like share-card.js). DOM built with textContent only |
+| `pbx-module/apiusers/bin/apiusers-presence` | cron (`/etc/cron.d/apiusers`, every minute, as asterisk): `presenceTick()` → kv rows `presence` + `signins` |
 | `pbx-module/apiusers/views/page.php` | PBX admin page |
 | `pbx-module/apiusers/bin/apiusers-remote` | SSH forced command (JSON in / JSON out) |
 | `pbx-module/apiusers/assets/share-card.js` | Share card (QR, PNG, email, copy, print), all client-side. **Source copy**; `scripts/sync-assets.sh` copies it + `qrcode.js` to `docker-gateway/panel/static/`. The PBX page inlines it (no FreePBX asset routing needed); the panel serves `/static/` |
@@ -77,7 +80,7 @@ row `state`). Kamailio has no user database, and the panel stores nothing.
 | `scripts/setup-docker.sh` | Run on the gateway host |
 | `scripts/proxmox-firewall.sh` | Optional, Proxmox host: rewrites `/etc/pve/firewall/<CT>.fw` (env CT/NPM_IP/PBX_IP) |
 | `docs/npm-authentik.md` | NPM proxy host + Authentik forward-auth |
-| `tests/engine_test.php` | `php tests/engine_test.php`, must print ALL PASSED |
+| `tests/engine_test.php`, `tests/live_test.php` | both must print ALL PASSED. `tests/fixtures/live/` = real Asterisk 20 output |
 
 ## Security invariants. Do not break these.
 
@@ -108,6 +111,12 @@ row `state`). Kamailio has no user database, and the panel stores nothing.
    The pub socket only exists with `-A WITH_PUB` (entrypoint sets it when GW_PUBLIC_IP resolves).
 8. **911 warning:** a remote user's 911 call goes out with the PBX's E911 address
    (the owner's house). The UI warns about this. Keep 911 off for remote people.
+9. **Only `apiu-…` usernames pass the gateway** (FROM_CLIENT: `$fU`, `$au`, and `$tU` for REGISTER must match
+   `^apiu-[0-9a-f]+$`, else 403 + log `blocked non-API username`). Asterisk picks the endpoint by From user or auth
+   username and real extensions have no ACL, so without this a real extension (701…) could be registered through the
+   gateway / public door. Found Oct 2026 while building the Live view; proven in the sandbox (worked before, 403 after).
+10. **Live view is read-only** except `hangup` (Engine op, allowed remotely, channel must match `PJSIP/apiu-…-…`, be
+   live, and belong to a known user; audited) and `disa_unlock` (Engine op, PBX page only, Public accounts only).
 
 ## Verified during the build (sandbox: Asterisk 20, Kamailio 5.7, rtpengine 11)
 
@@ -154,6 +163,13 @@ Verified on real hardware (Oct 2026): Incredible PBX 2026 for Debian 13 (Asteris
 FreePBX 17) with a Docker LXC on Proxmox. Zoiper (Android) worked on home Wi-Fi and over
 AstroWarp on cellular: registration, allowed and blocked extensions, 88xx inbound, and CDRs.
 
+- Live view (Oct 2026, sandbox Asterisk 20): contacts (door + real IP from Path `received=`), status/RTT joined by
+  the 10-char contact hash, inbound call (caller = channel running `Dial(PJSIP/apiu-…)`), outbound call (door +
+  dialed number from `GROUP(apiunet)` / `GROUP(apiudst)`), local + remote hang-up, wrong-PIN DISA lines + lockout, panel and
+  PBX page rendered in Chromium (desktop light/dark, 390 px phone: no sideways scroll). Asterisk CLI goes through
+  FreePBX's AMI `Command` (`$r['data']`) with `asterisk -rx` as fallback. Not yet seen on the real PBX: the AMI
+  `data` shape on Asterisk 22 and the `[YYYY-MM-DD HH:MM:SS]` FreePBX log date format (both handled).
+
 ## Ideas / hardening backlog
 
 - Incredible PBX's default iptables trust 192.168.0.0/16. Consider limiting SSH and the web GUI to admin hosts.
@@ -196,3 +212,4 @@ Nothing on the PBX changes, because TLS and SRTP end at the gateway.
 - `/etc/asterisk/pjsip_apiusers.conf` and `extensions_apiusers.conf`
 - The include lines marked `apiusers` in `pjsip_custom.conf` (or `pjsip.endpoint_custom.conf`) and in `extensions_custom.conf`
 - `/usr/local/sbin/apiusers-remote`, `/etc/sudoers.d/apiusers-remote`, and user `apiremote` (`userdel -r apiremote`)
+- `/usr/local/sbin/apiusers-presence` and `/etc/cron.d/apiusers` (Live view sign-in history)

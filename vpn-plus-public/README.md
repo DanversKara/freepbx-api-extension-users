@@ -27,6 +27,10 @@ You also get:
 - **A share card** for each user: QR codes (VPN invite link + Zoiper settings), a downloadable
   image, copy text, email draft, phone share sheet and print. It's generated in your browser,
   and nothing is stored.
+- **A Live view** (PBX page and remote panel): who is signed in right now and through which door
+  (VPN / home Wi-Fi / public), their phone's address and app, calls in progress with a **Hang up** button,
+  sign-in / sign-out history, failed sign-ins (wrong passwords, unknown usernames, wrong DISA PINs)
+  and locked DISA codes.
 - **Per-user call logs and an audit log.**
 
 You manage users from a page inside FreePBX, or optionally from a **remote web panel behind
@@ -46,6 +50,7 @@ paid or emergency calling.
 - [Connect your VPN](#connect-your-vpn): AstroWarp · Tailscale · WireGuard · home Wi-Fi
 - [Account types: VPN vs Public (no VPN)](#account-types-vpn-vs-public-no-vpn) · [public door](#the-public-door-optional-port-forward) · [DISA](#disa-dial-out-code-public-accounts)
 - [Add users & set up Zoiper](#add-users--set-up-zoiper)
+- [Live view](#live-view)
 - [Remote panel (optional)](#remote-panel-optional)
 - [Read this about 911](#-read-this-about-911)
 - [Day-to-day operations](#day-to-day-operations)
@@ -418,6 +423,28 @@ If you ever want true one-scan setup, there are two routes. Neither is built int
 
 ---
 
+## Live view
+
+The **Live** section sits at the top of the PBX page (refreshes every 5 s) and of the remote panel
+(every 10 s). It pauses while the browser tab is hidden.
+
+| Part | What you see | Where it comes from |
+|---|---|---|
+| **Signed in now** | user, door (VPN / Home Wi-Fi / Public), the phone's real IP:port, app, online + ping, how long | the PJSIP contact; the gateway writes the door and real address into its `Path` |
+| **Calls in progress** | who, the number they dialed or who is calling them, door, state, timer, **Hang up** | `core show channels`; the dialplan tags each call with the door and dialed number |
+| **Dial-out code locked** | a Public account's DISA code locked by 5 wrong PINs, until when | AstDB; **Unlock now** is on the PBX page only |
+| **Sign-in history** | signed in / signed out (and after how long) / changed network | recorded every minute by `/etc/cron.d/apiusers` and on every refresh (last 300 events) |
+| **Failed sign-ins** | wrong password, unknown API username, wrong DISA PIN | the PBX log (`/var/log/asterisk/full`, recent part) |
+
+- A **VPN account that signs in through the public door** gets a red warning. It can't call that way,
+  but it means someone used that login from the internet. Give it a **New password**.
+- **Hang up** works from both pages (it only ends a call) and is written to the audit log.
+- For failed sign-ins the PBX only sees the gateway's address, so the door is worked out from the server the phone typed in.
+- Logins for anything that isn't an API account (for example your real extensions) are refused by the
+  gateway before they reach the PBX. They show up in `docker compose logs kamailio` as `blocked non-API username`.
+
+---
+
 ## Remote panel (optional)
 
 The panel is a small stateless web app on the gateway host (port 8000, LAN only). Put it behind
@@ -432,6 +459,7 @@ login, then the panel. Step-by-step instructions: **[docs/npm-authentik.md](docs
 | Turn those **OFF** (and DISA off) | Release the **kill switch** |
 | New password (shown once), delete users | Show an existing password |
 | Engage the **kill switch**, view calls and the audit log | Change settings or the remote token |
+| See the **Live** view and **hang up** a call | **Unlock** a locked DISA code |
 
 Untick **"Allow the remote panel"** on the PBX page to lock the panel out entirely.
 
@@ -459,14 +487,14 @@ Untick **"Allow the remote panel"** on the PBX page to lock the panel out entire
 | Watch SIP on the PBX | `asterisk -rvvv` then `pjsip set logger on` |
 | Update the gateway | `git pull && cd docker-gateway && docker compose up -d --build` |
 | Update the module | `git pull && bash scripts/update-pbx.sh` (copies the module, regenerates the dialplan, keeps users) |
-| Run the logic tests | `php tests/engine_test.php` → `ALL PASSED` |
-| Edited the share card? | Edit `pbx-module/apiusers/assets/share-card.js`, then `bash scripts/sync-assets.sh` (copies it to the panel) |
+| Run the logic tests | `php tests/engine_test.php` and `php tests/live_test.php` → `ALL PASSED` |
+| Edited the share card or Live view? | Edit `pbx-module/apiusers/assets/share-card.js` / `live-view.js`, then `bash scripts/sync-assets.sh` (copies them to the panel) |
 
 **Uninstall (PBX):**
 
 - `fwconsole ma uninstall apiusers && fwconsole ma remove apiusers`
 - Remove the `apiusers` include lines from `pjsip_custom.conf` and `extensions_custom.conf`.
-- `rm /usr/local/sbin/apiusers-remote /etc/sudoers.d/apiusers-remote && userdel -r apiremote`
+- `rm /usr/local/sbin/apiusers-remote /usr/local/sbin/apiusers-presence /etc/cron.d/apiusers /etc/sudoers.d/apiusers-remote && userdel -r apiremote`
 
 **Uninstall (gateway):** `docker compose down`.
 
@@ -501,7 +529,8 @@ Untick **"Allow the remote panel"** on the PBX page to lock the panel out entire
 - **No inbound ports** on your router for any of this, unless you choose to open the optional public door.
   Even then, only the gateway is exposed (never the PBX), and only Public accounts (internal-only, never 911) can call through it.
 - **The PBX stays private.** API accounts only accept the gateway's IP (`permit=`), and the gateway
-  only forwards phone traffic to the PBX. It is never an open relay: in-dialog requests from phones
+  only forwards phone traffic to the PBX, and only for `apiu-…` usernames, so your real extensions can't be tried
+  through it. It is never an open relay: in-dialog requests from phones
   must route to the PBX, and the PBX-side socket drops anyone who isn't the PBX.
 - **Least privilege in the dialplan.** Everything not explicitly allowed is denied. Premium numbers
   are always blocked. Caribbean NANP codes are treated as international. Transfers are disabled
@@ -531,10 +560,12 @@ Every place in the code that changes is tagged **`ZOIPER-PRO-TODO`**, and the fu
 pbx-module/apiusers/       FreePBX 17 module (source of truth)
   lib/Engine.php             rules, validation, safety lock, audit (pure PHP, unit-tested)
   lib/ConfigGen.php          generates pjsip_apiusers.conf + extensions_apiusers.conf
+  lib/Live.php               Live view: reads Asterisk's CLI output (pure PHP, unit-tested)
   Apiusers.class.php         FreePBX glue: DB, reload, hangup, CDR, remote entry point
   views/page.php             the admin page
-  assets/                    share card (share-card.js) + vendored QR library (MIT)
+  assets/                    share card (share-card.js), Live view (live-view.js), vendored QR library (MIT)
   bin/apiusers-remote        SSH forced command (JSON in/out)
+  bin/apiusers-presence      cron job: sign-in history for the Live view
 docker-gateway/            runs on the gateway host
   kamailio/                  SIP front door (config template + entrypoint)
   rtpengine/                 audio relay
@@ -542,7 +573,7 @@ docker-gateway/            runs on the gateway host
   docker-compose.yml, .env.example
 scripts/                   install-pbx.sh, update-pbx.sh, setup-docker.sh, proxmox-firewall.sh, sync-assets.sh
 docs/npm-authentik.md      reverse proxy + SSO for the panel
-tests/engine_test.php      logic tests (php tests/engine_test.php)
+tests/                     engine_test.php + live_test.php (php tests/<file>)
 CLAUDE.md                  deep technical notes for maintainers / AI assistants
 ```
 

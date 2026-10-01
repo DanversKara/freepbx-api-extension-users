@@ -57,6 +57,8 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
                 case 'kill':    $r = $mod->op('kill', [], 'local', $actor); if ($r['ok']) $msg = 'KILL SWITCH ENGAGED – all API users disconnected.'; break;
                 case 'unkill':  $r = $mod->op('unkill', [], 'local', $actor); if ($r['ok']) $msg = 'Kill switch released.'; break;
                 case 'calls':   $r = $mod->calls($id); if ($r['ok']) $calls = ['id' => $id, 'rows' => $r['calls']]; break;
+                case 'disa_unlock': $r = $mod->unlockDisa($id, 'local', $actor); if ($r['ok']) $msg = 'Dial-out code unlocked.'; break;
+                case 'hangup':  $r = $mod->hangupCall((string)($_POST['channel'] ?? ''), 'local', $actor); if ($r['ok']) $msg = 'Call ended.'; break;
                 case 'settings':
                     $r = $mod->op('settings', [
                         'gateway_ip' => $_POST['gateway_ip'] ?? '',
@@ -145,6 +147,21 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
       <?php endif; ?>
     </form>
   </div></div>
+
+  <!-- ===================== live ===================== -->
+  <?php
+    try { $live = $mod->live(); } catch (\Throwable $e) { $live = ['ok' => false, 'warning' => 'Live data unavailable: ' . $e->getMessage()]; }
+  ?>
+  <h3>Live <small class="text-muted">who is signed in, calls in progress, sign-ins</small></h3>
+  <div id="apiu-live"></div>
+  <script><?= file_get_contents(__DIR__ . '/../assets/live-view.js') ?></script>
+  <script>ApiUsersLive(document.getElementById('apiu-live'), {
+    initial: <?= json_encode($live, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES) ?>,
+    url: 'ajax.php?module=apiusers&command=live', interval: 5000,
+    tableClass: 'table table-condensed table-sm',
+    hangup: { url: '<?= $self ?>', fields: { csrf: <?= json_encode($csrf) ?>, apiu_action: 'hangup' } },
+    unlock: { url: '<?= $self ?>', fields: { csrf: <?= json_encode($csrf) ?>, apiu_action: 'disa_unlock' } }
+  });</script>
 
   <!-- ===================== users ===================== -->
   <h3>Users</h3>

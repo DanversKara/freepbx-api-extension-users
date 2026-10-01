@@ -98,6 +98,9 @@ fwconsole reload >/dev/null
 
 say "5/7 Remote control: $REMOTE_USER user + forced command"
 install -m 755 -o root -g root "$MOD_SRC/bin/apiusers-remote" /usr/local/sbin/apiusers-remote
+install -m 755 -o root -g root "$MOD_SRC/bin/apiusers-presence" /usr/local/sbin/apiusers-presence
+printf '# apiusers module (API Users): sign-in history for the Live view\n* * * * * asterisk /usr/local/sbin/apiusers-presence >/dev/null 2>&1\n' > /etc/cron.d/apiusers
+chmod 644 /etc/cron.d/apiusers
 command -v sudo >/dev/null || { apt-get update -qq && apt-get install -y -qq sudo; }
 if ! id "$REMOTE_USER" >/dev/null 2>&1; then
   useradd --system --create-home --home-dir /var/lib/$REMOTE_USER --shell /bin/sh "$REMOTE_USER"

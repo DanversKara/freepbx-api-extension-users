@@ -18,10 +18,18 @@ DST="$WEBROOT/admin/modules/apiusers"
 
 echo "==> logic tests"
 php "$HERE/tests/engine_test.php" | tail -1
+php "$HERE/tests/live_test.php" | tail -1
 
 echo "==> copying module to $DST"
 cp -a "$HERE/pbx-module/apiusers/." "$DST/"
 install -m 755 -o root -g root "$HERE/pbx-module/apiusers/bin/apiusers-remote" /usr/local/sbin/apiusers-remote
+install -m 755 -o root -g root "$HERE/pbx-module/apiusers/bin/apiusers-presence" /usr/local/sbin/apiusers-presence
+# Live view: record sign-ins / sign-outs once a minute, even when nobody has the page open
+cat > /etc/cron.d/apiusers <<'CRON'
+# apiusers module (API Users): sign-in history for the Live view
+* * * * * asterisk /usr/local/sbin/apiusers-presence >/dev/null 2>&1
+CRON
+chmod 644 /etc/cron.d/apiusers
 fwconsole chown >/dev/null
 
 echo "==> regenerating Asterisk config from saved users"
