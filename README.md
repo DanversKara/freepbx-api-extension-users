@@ -13,7 +13,7 @@ This repository has **two editions**. Pick the one that fits how your users will
 
 > Both editions share the same core: the FreePBX module, the Docker gateway (Kamailio + rtpengine),
 > the remote panel behind Nginx Proxy Manager + Authentik, the share card with QR codes, the kill switch,
-> call logs and the audit log. `vpn-plus-public` is the newer build and also adds the Live view. Each folder has its own full README with install steps.
+> call logs and the audit log. Both have the **Live view** (who's signed in, calls in progress with hang-up, sign-in history, failed sign-ins), and in both the gateway refuses any login that isn't an API account, so your real extensions can't be tried through it. Each folder has its own full README with install steps.
 
 ---
 
@@ -53,8 +53,6 @@ open the public door, it behaves exactly like VPN only.
 | **Encryption** | VPN encrypts everything | VPN users: encrypted. Public door: **plain UDP** (free Zoiper has no TLS/SRTP) |
 | **Internet scanners** | Can't see anything | Will find UDP 5080 (rate-limited and filtered, but you'll see the noise) |
 | **Remote panel safety lock** | Can't turn on outside calls / 911 / intl | Same, **plus** can't create Public accounts or set or enable DISA |
-| **Live view** (who's signed in, live calls + hang up, sign-in history, failed sign-ins) | — | ✅ PBX page and remote panel |
-| **Gateway refuses non-API usernames** (your real extensions can't be tried through it) | — (only reachable over your VPN/LAN) | ✅ |
 | **Extra setup** | VPN only | VPN + router forwards + `GW_PUBLIC_IP` in `.env` |
 | **Best for** | Family/friends who'll install one VPN app | Mixed groups: some on VPN, some who just want "an app and a login" |
 
