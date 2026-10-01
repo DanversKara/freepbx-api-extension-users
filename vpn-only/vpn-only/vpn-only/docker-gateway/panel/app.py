@@ -79,7 +79,7 @@ def gate():
 
 
 def user_args(form):
-    return {
+    args = {
         "name": form.get("name", ""),
         "reach": form.get("reach", ""),
         "enabled": "enabled" in form,
@@ -88,6 +88,10 @@ def user_args(form):
         "max_calls": form.get("max_calls", 1),
         "max_minutes": form.get("max_minutes", 120),
     }
+    # Only send lists the form actually showed, so a missing section never wipes them.
+    if form.get("confs_sent") == "1":
+        args["confs"] = form.getlist("confs")
+    return args
 
 
 def page(msg=None, err=None, creds=None, calls=None, edit_id=None):
@@ -127,6 +131,9 @@ def create():
 def update(uid):
     args = user_args(request.form)
     args["id"] = uid
+    # Feature codes: the panel can only REMOVE them (untick); adding is PBX-page only (safety lock).
+    if request.form.get("features_sent") == "1":
+        args["features"] = request.form.getlist("features")
     # Turning risky flags OFF is allowed remotely; ON is not (PBX enforces).
     for k in ("external", "e911", "international"):
         if request.form.get(k + "_off") == "1":

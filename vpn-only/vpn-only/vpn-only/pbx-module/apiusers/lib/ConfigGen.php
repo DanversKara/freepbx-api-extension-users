@@ -210,6 +210,24 @@ EOT;
             }
         }
 
+        // 1b) conference rooms: straight into FreePBX's conference context, nowhere else
+        $done = array_fill_keys(array_map('strval', $u['allowed'] ?? []), true);
+        foreach (($u['confs'] ?? []) as $x) {
+            $x = preg_replace('/\D/', '', (string)$x);
+            if ($x === '' || isset($done[$x])) continue;
+            $done[$x] = true;
+            $c .= "exten => $x,1,$pre\n same => n,Goto(ext-meetme,$x,1)\n";
+        }
+        // 1c) feature codes (VPN accounts only): the exact code, run the way a house phone would
+        if (empty($u['public'])) {
+            foreach (($u['features'] ?? []) as $x) {
+                $x = (string)$x;
+                if (!preg_match('/^[0-9*#]{2,10}$/', $x) || isset($done[$x])) continue;
+                $done[$x] = true;
+                $c .= "exten => $x,1,$pre\n same => n,Goto(from-internal,$x,1)\n";
+            }
+        }
+
         // 2) outside world
         if (!empty($u['external'])) {
             $out = fn($pat) => "exten => $pat,1,$pre\n same => n,Goto(outbound-allroutes,\${EXTEN},1)\n";
@@ -271,6 +289,8 @@ EOT;
         $p[] = !empty($u['e911']) ? '911 ON' : 'no 911';
         $p[] = !empty($u['international']) ? 'intl ON' : 'no intl';
         $p[] = 'exts: ' . (implode(',', $u['allowed']) ?: 'none');
+        if (!empty($u['confs'])) $p[] = 'conf: ' . implode(',', $u['confs']);
+        if (!empty($u['features'])) $p[] = 'codes: ' . implode(',', $u['features']);
         return implode(' | ', $p);
     }
 }

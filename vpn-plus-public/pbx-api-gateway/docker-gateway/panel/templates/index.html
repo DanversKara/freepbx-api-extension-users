@@ -105,7 +105,7 @@
       <span class="pill {{ 'on' if u.international else 'off' }}">intl</span>
       <span class="pill {{ 'red' if u.public else 'on' }}">{{ 'PUBLIC' if u.public else 'VPN' }}</span>
       {% if u.public %}<span class="pill {{ 'on' if u.disa else 'off' }}">DISA</span>{% endif %}
-      <div class="mute">may call: {{ u.allowed|join(', ') or 'nobody' }} · {{ u.max_calls }} call(s) · {{ u.max_minutes ~ ' min' if u.max_minutes else 'no time limit' }}</div>
+      <div class="mute">may call: {{ u.allowed|join(', ') or 'nobody' }}{% if u.confs %} · conference: {{ u.confs|join(', ') }}{% endif %}{% if u.features %} · codes: {{ u.features|join(', ') }}{% endif %} · {{ u.max_calls }} call(s) · {{ u.max_minutes ~ ' min' if u.max_minutes else 'no time limit' }}</div>
     </td>
     <td class="actions">
       <a class="btn" href="/?edit={{ u.id }}">Edit</a>
@@ -129,7 +129,7 @@
 </table></div>
 {% endif %}
 
-{% set f = edit or {'id':'', 'name':'', 'reach':'', 'enabled':True, 'internal':True, 'external':False, 'e911':False, 'international':False, 'allowed':[], 'max_calls':1, 'max_minutes':120} %}
+{% set f = edit or {'id':'', 'name':'', 'reach':'', 'enabled':True, 'internal':True, 'external':False, 'e911':False, 'international':False, 'allowed':[], 'confs':[], 'features':[], 'max_calls':1, 'max_minutes':120} %}
 <h2>{{ 'Edit ' ~ f.name if edit else 'Add user' }}</h2>
 <form class="card" method="post" action="{{ '/update/' ~ f.id if edit else '/create' }}">
   <input type="hidden" name="csrf" value="{{ csrf }}">
@@ -149,6 +149,25 @@
       <label><input type="checkbox" name="allowed" value="{{ o.reach }}" {{ 'checked' if (o.reach|string) in f.allowed }}> {{ o.reach }} <span class="mute">API: {{ o.name }}</span></label>
     {% endfor %}
   </div>
+
+  <h2>Conference rooms</h2>
+  {% if d.conferences %}
+  <input type="hidden" name="confs_sent" value="1">
+  <div class="checks">
+    {% for c in d.conferences %}
+      <label><input type="checkbox" name="confs" value="{{ c.code }}" {{ 'checked' if c.code in (f.confs or []) }}> {{ c.code }} <span class="mute">{{ c.name }}</span></label>
+    {% endfor %}
+  </div>
+  {% else %}<p class="mute">No conference rooms found on the PBX{{ ' (this user has: ' ~ (f.confs|join(', ')) ~ ')' if f.confs }}.</p>{% endif %}
+
+  <h2>Feature codes <span class="mute">🔒 can only be added on the PBX page</span></h2>
+  {% if edit and f.features %}
+    <input type="hidden" name="features_sent" value="1">
+    <div class="checks">
+      {% for c in f.features %}<label><input type="checkbox" name="features" value="{{ c }}" checked> <code>{{ c }}</code></label>{% endfor %}
+    </div>
+    <p class="mute">Untick to remove. Codes like ChanSpy (555) let this person listen to any call on the PBX.</p>
+  {% else %}<p class="mute">None.</p>{% endif %}
 
   <h2>Outside calls <span class="mute">🔒 can only be turned ON from the PBX page</span></h2>
   {% if edit %}<p><span class="pill {{ 'red' if f.public else 'on' }}">{{ 'Public account (no VPN, locked down)' if f.public else 'VPN account' }}</span>

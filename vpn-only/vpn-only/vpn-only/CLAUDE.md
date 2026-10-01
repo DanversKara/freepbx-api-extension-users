@@ -80,7 +80,7 @@ row `state`). Kamailio has no user database, and the panel stores nothing.
 | `scripts/setup-docker.sh` | Run on the gateway host |
 | `scripts/proxmox-firewall.sh` | Optional, Proxmox host: rewrites `/etc/pve/firewall/<CT>.fw` (env CT/NPM_IP/PBX_IP) |
 | `docs/npm-authentik.md` | NPM proxy host + Authentik forward-auth |
-| `tests/engine_test.php`, `tests/live_test.php` | both must print ALL PASSED. `tests/fixtures/live/` = real Asterisk 20 output (captured on the VPN + Public build, so some rows use the `pub` door) |
+| `tests/engine_test.php`, `tests/live_test.php`, `tests/features_test.php` | all must print ALL PASSED. `tests/fixtures/live/` = real Asterisk 20 output (captured on the VPN + Public build, so some rows use the `pub` door) |
 
 ## Security invariants. Do not break these.
 
@@ -111,6 +111,11 @@ row `state`). Kamailio has no user database, and the panel stores nothing.
 8. **Live view is read-only** except `hangup` (Engine op, allowed remotely, channel must match `PJSIP/apiu-…-…`, be
    live, and belong to a known user; audited). The door of an outgoing call is the door of the user's signed-in phone
    (this edition doesn't stamp X-Gw-Net); the dialed number comes from `GROUP(apiudst)` set in `[apiusers-pre]`.
+9. **Conference rooms + feature codes** (user fields `confs`, `features`; Engine::applyFields / checkFeatureCode,
+   ConfigGen 1b/1c). Rooms go ONLY to `Goto(ext-meetme,ROOM,1)`; validated against FreePBX table `meetme` when readable.
+   Feature codes are exact extens → `Goto(from-internal,CODE,1)` after `apiusers-pre`: `[0-9*#]{2,10}`, digits-only
+   max 4 digits, never starting 0/1/9, never 911/933/112/N11. Remote (safety lock) may remove but never add codes.
+   Directory comes from FreePBX tables `meetme` and `featurecodes` (Apiusers::directory(); null = unreadable).
 
 ## Verified during the build (sandbox: Asterisk 20, Kamailio 5.7, rtpengine 11)
 
@@ -159,6 +164,11 @@ AstroWarp on cellular: registration, allowed and blocked extensions, 88xx inboun
   "Unable to locate the FreePBX BMO Class 'Apiusers'" until `fwconsole ma install apiusers` ran. FreePBX won't load
   a module whose files are newer than its registered version. update-pbx.sh now runs `fwconsole ma install apiusers`.
   Bump the version in module.xml whenever the module changes, and always update through update-pbx.sh.
+
+- Conference rooms + feature codes (Oct 2026, sandbox): through the gateway an API user reached conference 8000,
+  `555` and `*43`; `*98` (not ticked) and room 8001 (not ticked) were refused; the remote panel's attempt to add `*98`
+  was refused by the safety lock; unticking `555` in the panel removed it. `ext-meetme` / `from-internal` were sandbox
+  stand-ins: confirm on the real PBX that conference rooms answer through `ext-meetme`.
 
 ## Ideas / hardening backlog
 

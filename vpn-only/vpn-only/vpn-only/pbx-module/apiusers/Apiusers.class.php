@@ -142,6 +142,34 @@ class Apiusers extends \FreePBX_Helpers implements \BMO
         return $out;
     }
 
+    /**
+     * Conference rooms and enabled feature codes, read from FreePBX's own tables
+     * (conferences module: `meetme`; framework: `featurecodes`). null = couldn't read.
+     */
+    public function directory(): array
+    {
+        $confs = null; $codes = null;
+        try {
+            $confs = [];
+            foreach ($this->db->query('SELECT exten, description FROM meetme')->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+                $confs[(string)$r['exten']] = (string)$r['description'];
+            }
+            ksort($confs, SORT_NATURAL);
+        } catch (\Throwable $e) { $confs = null; }
+        try {
+            $codes = [];
+            $q = $this->db->query('SELECT featurename, description, defaultcode, customcode, enabled FROM featurecodes');
+            foreach ($q->fetchAll(\PDO::FETCH_ASSOC) as $r) {
+                if ((string)$r['enabled'] !== '1') continue;
+                $code = trim((string)(($r['customcode'] ?? '') !== '' ? $r['customcode'] : $r['defaultcode']));
+                if ($code === '' || !preg_match('/^[0-9*#]{2,10}$/', $code)) continue;
+                $codes[$code] = trim((string)($r['description'] ?: $r['featurename']));
+            }
+            ksort($codes, SORT_NATURAL);
+        } catch (\Throwable $e) { $codes = null; }
+        return ['confs' => $confs, 'features' => $codes];
+    }
+
     // --------------------------------------------------------------- core
 
     /**
@@ -150,7 +178,7 @@ class Apiusers extends \FreePBX_Helpers implements \BMO
     public function op(string $op, array $args, string $source, string $actor): array
     {
         $before = $this->loadState();
-        $eng = new Engine($before, array_keys($this->localExtensions()));
+        $eng = new Engine($before, array_keys($this->localExtensions()), $this->directory());
         $res = $eng->run($op, $args, $source, $actor);
 
         // Audit entries are written even for denied ops, so always persist.

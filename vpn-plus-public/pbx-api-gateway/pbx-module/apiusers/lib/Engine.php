@@ -38,10 +38,18 @@ class Engine
     /** @var string[] real FreePBX extensions that may be whitelisted as targets */
     private array $localExtensions;
 
-    public function __construct(array $state, array $localExtensions = [])
+    /** @var array|null conference rooms on this PBX (room => name); null = couldn't be read (any number accepted) */
+    private ?array $confRooms;
+    /** @var array|null enabled FreePBX feature codes (code => description); null = couldn't be read */
+    private ?array $featureCodes;
+
+    /** $directory = ['confs' => [room => name] | null, 'features' => [code => description] | null] */
+    public function __construct(array $state, array $localExtensions = [], array $directory = [])
     {
         $this->state = self::normalizeState($state);
         $this->localExtensions = array_values(array_map('strval', $localExtensions));
+        $this->confRooms = $directory['confs'] ?? null;
+        $this->featureCodes = $directory['features'] ?? null;
     }
 
     public static function defaultSettings(): array
@@ -103,7 +111,9 @@ class Engine
                         'client_lan_addr' => $this->state['settings']['client_lan_addr'],
                         'client_pub_addr' => $this->state['settings']['client_pub_addr'],
                         'disa_code' => $this->state['settings']['disa_code'],
-                        'local_extensions' => $this->localExtensions];
+                        'local_extensions' => $this->localExtensions,
+                        'conferences' => self::pairs($this->confRooms ?? []),
+                        'feature_codes' => self::pairs($this->featureCodes ?? [])];
             case 'get':
                 $u = $this->state['users'][$args['id'] ?? ''] ?? null;
                 return $u ? ['ok' => true, 'user' => $this->publicView($u)] : self::err('no such user');
@@ -168,6 +178,13 @@ class Engine
             return "'$op' is only allowed from the PBX page (VPN/LAN)";
         }
         if (!$s['safety_lock']) return null;
+        // Feature codes run with a house phone's powers (ChanSpy can listen to any call): add them on the PBX page only.
+        if (($op === 'create' || $op === 'update') && array_key_exists('features', $args)) {
+            $cur = $op === 'update' ? ($this->state['users'][$args['id'] ?? '']['features'] ?? []) : [];
+            foreach (self::codeList($args['features']) as $c) {
+                if (!in_array($c, $cur, true)) return 'safety lock: feature codes can only be added from the PBX page';
+            }
+        }
         if (($op === 'create' || $op === 'update') && isset($args['disa_pin']) && $args['disa_pin'] !== '') {
             return 'safety lock: DISA PINs can only be set from the PBX page';
         }
@@ -212,6 +229,8 @@ class Engine
             'external'      => false,
             'e911'          => false,
             'international' => false,
+            'confs'         => [],      // conference rooms they may join (FreePBX Conferences)
+            'features'      => [],      // exact feature codes they may dial (VPN accounts only)
             'public'        => false,   // ACCOUNT TYPE, fixed at creation: false = VPN account, true = Public account
             'disa'          => false,   // public accounts only: PIN-protected dial-out code (never 911)
             'disa_salt'     => '',
@@ -306,6 +325,33 @@ class Engine
             sort($u['allowed']);
             $u['allowed'] = array_map('strval', $u['allowed']);
         }
+        // ---- conference rooms + feature codes ---------------------------------
+        $u += ['confs' => [], 'features' => []];
+        if (array_key_exists('confs', $a)) {
+            $clean = [];
+            foreach (self::codeList($a['confs']) as $c) {
+                if (!preg_match('/^\d{2,8}$/', $c)) return "conference room '$c' is not a number";
+                if ($this->confRooms !== null && !array_key_exists($c, $this->confRooms)) {
+                    return "conference room $c does not exist on this PBX (Applications > Conferences)";
+                }
+                $clean[$c] = true;
+            }
+            $u['confs'] = array_map('strval', array_keys($clean));
+            sort($u['confs'], SORT_STRING);
+        }
+        if (array_key_exists('features', $a)) {
+            $clean = [];
+            foreach (self::codeList($a['features']) as $c) {
+                $e = self::checkFeatureCode($c);
+                if ($e) return $e;
+                $clean[$c] = true;
+            }
+            if ($clean && !empty($u['public'])) {
+                return 'Public (no-VPN) accounts can never use feature codes: a feature code can do anything a house phone can.';
+            }
+            $u['features'] = array_map('strval', array_keys($clean));
+            sort($u['features'], SORT_STRING);
+        }
         if (array_key_exists('max_calls', $a)) {
             $m = (int)$a['max_calls'];
             if ($m < 1 || $m > self::MAX_CALLS_LIMIT) return 'max calls must be 1-' . self::MAX_CALLS_LIMIT;
@@ -319,7 +365,7 @@ class Engine
         // 911 and international only make sense on top of external
         if (!$u['external']) { $u['e911'] = false; $u['international'] = false; }
         // Belt and braces: a public account is ALWAYS internal-only.
-        if ($u['public']) { $u['external'] = $u['e911'] = $u['international'] = false; }
+        if ($u['public']) { $u['external'] = $u['e911'] = $u['international'] = false; $u['features'] = []; }
         if (!$u['public']) { $u['disa'] = false; }
         if ($u['disa'] && $u['disa_hash'] === '') return 'Set a DISA PIN before turning the dial-out code on.';
         return null;
@@ -409,6 +455,38 @@ class Engine
         return null;
     }
 
+    /** "555, *97" or ['555', '*97'] -> ['555', '*97'] (trimmed, no blanks, no duplicates) */
+    public static function codeList($v): array
+    {
+        $list = is_array($v) ? $v : preg_split('/[\s,]+/', (string)$v);
+        $out = [];
+        foreach ($list as $x) { $x = trim((string)$x); if ($x !== '') $out[$x] = true; }
+        return array_map('strval', array_keys($out));
+    }
+
+    /**
+     * Feature codes are dialed exactly as typed and sent to from-internal, so they must never be
+     * able to look like a phone number, a trunk prefix or an emergency number.
+     */
+    public static function checkFeatureCode(string $c): ?string
+    {
+        if (!preg_match('/^[0-9*#]{2,10}$/', $c)) return "feature code '$c' may only contain digits, * and # (2-10 characters)";
+        if (ctype_digit($c)) {
+            if (strlen($c) > 4) return "feature code '$c' looks like a phone number (digits-only codes: 2-4 digits)";
+            if (preg_match('/^([2-9]11|933|112)$/', $c)) return "$c is a service/emergency number, not a feature code";
+            if (preg_match('/^[019]/', $c)) return "feature code '$c' starts with 0, 1 or 9 (trunk / operator prefixes); not allowed";
+        }
+        return null;
+    }
+
+    /** [code => name] -> [['code' => ..., 'name' => ...], ...] (keeps codes as strings in JSON) */
+    public static function pairs(array $m): array
+    {
+        $o = [];
+        foreach ($m as $k => $v) $o[] = ['code' => (string)$k, 'name' => (string)$v];
+        return $o;
+    }
+
     public function permString(array $u): string
     {
         $p = [];
@@ -419,6 +497,8 @@ class Engine
         $p[] = !empty($u['public']) ? 'PUBLIC' : 'VPN';
         if (!empty($u['disa'])) $p[] = 'DISA';
         $p[] = 'exts=' . (implode('/', $u['allowed']) ?: 'none');
+        if (!empty($u['confs'])) $p[] = 'conf=' . implode('/', $u['confs']);
+        if (!empty($u['features'])) $p[] = 'codes=' . implode('/', $u['features']);
         return implode(',', $p);
     }
 

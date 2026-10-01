@@ -8,6 +8,14 @@ namespace ApiUsers;
 
 function h($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
+/** A short warning for feature codes that are more than a convenience. */
+function codeRisk(string $s): string
+{
+    if (preg_match('/spy|barge|whisper|intercom|listen|\b555\b|\b888\b/i', $s)) return 'can listen in on calls';
+    if (preg_match('/forward|follow|speed|blacklist|day.?night|toggle|queue|pause|dnd|do not disturb|wake/i', $s)) return 'changes PBX settings';
+    return '';
+}
+
 function renderPage(\FreePBX\modules\Apiusers $mod): string
 {
     if (session_status() !== PHP_SESSION_ACTIVE) @session_start();
@@ -38,6 +46,8 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
                     'disa' => isset($_POST['disa']),
                     'disa_pin' => preg_replace('/\D/', '', (string)($_POST['disa_pin'] ?? '')),
                     'allowed' => $_POST['allowed'] ?? [],
+                    'confs' => array_merge((array)($_POST['confs'] ?? []), Engine::codeList($_POST['confs_text'] ?? '')),
+                    'features' => array_merge((array)($_POST['features'] ?? []), Engine::codeList($_POST['features_text'] ?? '')),
                     'max_calls' => $_POST['max_calls'] ?? 1,
                     'max_minutes' => $_POST['max_minutes'] ?? 120,
                 ];
@@ -242,6 +252,45 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
       <?php endforeach; ?>
     </div>
 
+    <?php $dir = $mod->directory(); $confRooms = $dir['confs']; $fcodes = $dir['features'];
+          $fConfs = $f['confs'] ?? []; $fFeat = $f['features'] ?? []; ?>
+    <h4>Conference rooms</h4>
+    <?php if ($confRooms === null): ?>
+      <p class="text-muted" style="margin:0">Couldn't read the conference list. Room numbers, comma separated:</p>
+      <input class="form-control" name="confs_text" value="<?= h(implode(', ', $fConfs)) ?>" placeholder="8000">
+    <?php elseif (!$confRooms): ?>
+      <p class="text-muted">No conference rooms on this PBX yet (Applications &gt; Conferences).</p>
+    <?php else: ?>
+      <div class="row" style="margin-left:0">
+      <?php foreach ($confRooms as $x => $nm): ?>
+        <label class="col-md-3"><input type="checkbox" name="confs[]" value="<?= h($x) ?>"
+          <?= in_array((string)$x, $fConfs, true) ? 'checked' : '' ?>> <?= h($x) ?> <span class="text-muted"><?= h($nm) ?></span></label>
+      <?php endforeach; ?>
+      </div>
+    <?php endif; ?>
+
+    <div id="apiu-featopts">
+    <h4>Feature codes <small class="text-muted">VPN accounts only · added from this page only</small></h4>
+    <div class="alert alert-warning" style="margin:4px 0">A feature code works exactly as if it were dialed on a phone in your house.
+      <b>ChanSpy (555) and Barge let this person listen to any call on this PBX</b>, including yours. Codes like call forward,
+      follow-me or day/night change how the PBX handles calls. Only tick codes you'd let this person use on a house phone.</div>
+    <div class="row" style="margin-left:0">
+    <?php $custom = $fFeat;
+          foreach (($fcodes ?? []) as $x => $nm):
+            $x = (string)$x;
+            if (Engine::checkFeatureCode($x) !== null) continue;      // e.g. 5-digit or 9-prefixed codes are never allowed
+            $custom = array_values(array_diff($custom, [$x]));
+            $risk = codeRisk($nm . ' ' . $x); ?>
+      <label class="col-md-4"><input type="checkbox" name="features[]" value="<?= h($x) ?>"
+        <?= in_array($x, $fFeat, true) ? 'checked' : '' ?>> <code><?= h($x) ?></code> <span class="text-muted"><?= h($nm) ?></span>
+        <?php if ($risk): ?><span class="label label-danger badge badge-danger"><?= h($risk) ?></span><?php endif; ?></label>
+    <?php endforeach; ?>
+    </div>
+    <label>Other codes <small class="text-muted">(exactly as dialed, comma separated, e.g. Incredible PBX's 555 ChanSpy)</small></label>
+    <input class="form-control" name="features_text" value="<?= h(implode(', ', $custom)) ?>" placeholder="555, *43">
+    <small class="text-muted">Digits, * and #. Digits-only codes: 2-4 digits, not starting with 0, 1 or 9. 911, 933 and N11 are never allowed.</small>
+    </div>
+
     <h4>Account type</h4>
     <?php if (!$edit): ?>
       <div class="radio"><label><input type="radio" name="public" value="0" class="apiu-type" checked>
@@ -351,6 +400,7 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
     var v = document.getElementById('apiu-vpnopts'), p = document.getElementById('apiu-pubopts');
     if (v) v.style.display = pub ? 'none' : '';
     if (p) p.style.display = pub ? '' : 'none';
+    var fo = document.getElementById('apiu-featopts'); if (fo) fo.style.display = pub ? 'none' : '';
     if (pub && ext) { ext.checked = false; }
     document.querySelectorAll('.apiu-dep').forEach(function (c) {
       c.disabled = !ext || !ext.checked; if (!ext || !ext.checked) c.checked = false; });

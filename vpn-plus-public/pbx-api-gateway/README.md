@@ -31,6 +31,8 @@ You also get:
   (VPN / home Wi-Fi / public), their phone's address and app, calls in progress with a **Hang up** button,
   sign-in / sign-out history, failed sign-ins (wrong passwords, unknown usernames, wrong DISA PINs)
   and locked DISA codes.
+- **Conference rooms and feature codes per user**: tick the FreePBX conference rooms they may join, and
+  (on the PBX page only, VPN accounts only) feature codes such as `*43` echo test or `555` ChanSpy.
 - **Per-user call logs and an audit log.**
 
 You manage users from a page inside FreePBX, or optionally from a **remote web panel behind
@@ -50,6 +52,7 @@ paid or emergency calling.
 - [Connect your VPN](#connect-your-vpn): AstroWarp · Tailscale · WireGuard · home Wi-Fi
 - [Account types: VPN vs Public (no VPN)](#account-types-vpn-vs-public-no-vpn) · [public door](#the-public-door-optional-port-forward) · [DISA](#disa-dial-out-code-public-accounts)
 - [Add users & set up Zoiper](#add-users--set-up-zoiper)
+- [Conference rooms and feature codes](#conference-rooms-and-feature-codes)
 - [Live view](#live-view)
 - [Remote panel (optional)](#remote-panel-optional)
 - [Read this about 911](#-read-this-about-911)
@@ -423,6 +426,25 @@ If you ever want true one-scan setup, there are two routes. Neither is built int
 
 ---
 
+## Conference rooms and feature codes
+
+Below the extension list, every user also has:
+
+- **Conference rooms**: the rooms from *Applications → Conferences*. The call goes straight into that
+  conference and nowhere else, so this is safe for every account (VPN and Public). The remote panel can change it too.
+- **Feature codes** (VPN accounts only): tick your enabled FreePBX feature codes, or type other codes
+  exactly as dialed (e.g. Incredible PBX's `555` ChanSpy). Only the exact codes you list work.
+  - **Only the PBX page can add them.** The remote panel can only remove them (safety lock).
+  - **Public accounts can never have them**, not even from the PBX page. A feature code can do anything a house phone can.
+  - Codes that could look like a phone number, a trunk prefix or an emergency number are refused: digits-only codes
+    must be 2-4 digits and can't start with 0, 1 or 9; 911, 933 and N11 are never allowed.
+
+> ⚠️ **A feature code runs exactly as if dialed on a phone in your house.** ChanSpy (`555`) and Barge let
+> the person **listen to any call on your PBX**, including yours and other API users'. Call forward,
+> follow-me or day/night codes change how your PBX handles calls. Only give codes you'd let that person use on a house phone.
+
+---
+
 ## Live view
 
 The **Live** section sits at the top of the PBX page (refreshes every 5 s) and of the remote panel
@@ -459,6 +481,7 @@ login, then the panel. Step-by-step instructions: **[docs/npm-authentik.md](docs
 | Turn those **OFF** (and DISA off) | Release the **kill switch** |
 | New password (shown once), delete users | Show an existing password |
 | Engage the **kill switch**, view calls and the audit log | Change settings or the remote token |
+| Change **conference rooms**, remove **feature codes** | Add **feature codes** |
 | See the **Live** view and **hang up** a call | **Unlock** a locked DISA code |
 
 Untick **"Allow the remote panel"** on the PBX page to lock the panel out entirely.
@@ -487,7 +510,7 @@ Untick **"Allow the remote panel"** on the PBX page to lock the panel out entire
 | Watch SIP on the PBX | `asterisk -rvvv` then `pjsip set logger on` |
 | Update the gateway | `git pull && cd docker-gateway && docker compose up -d --build` |
 | Update the module | `git pull && bash scripts/update-pbx.sh` (copies the module, regenerates the dialplan, keeps users) |
-| Run the logic tests | `php tests/engine_test.php` and `php tests/live_test.php` → `ALL PASSED` |
+| Run the logic tests | `php tests/engine_test.php`, `live_test.php` and `features_test.php` → `ALL PASSED` |
 | Edited the share card or Live view? | Edit `pbx-module/apiusers/assets/share-card.js` / `live-view.js`, then `bash scripts/sync-assets.sh` (copies them to the panel) |
 
 **Uninstall (PBX):**
@@ -573,7 +596,7 @@ docker-gateway/            runs on the gateway host
   docker-compose.yml, .env.example
 scripts/                   install-pbx.sh, update-pbx.sh, setup-docker.sh, proxmox-firewall.sh, sync-assets.sh
 docs/npm-authentik.md      reverse proxy + SSO for the panel
-tests/                     engine_test.php + live_test.php (php tests/<file>)
+tests/                     engine_test.php, live_test.php, features_test.php (php tests/<file>)
 CLAUDE.md                  deep technical notes for maintainers / AI assistants
 ```
 
