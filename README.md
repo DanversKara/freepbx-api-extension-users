@@ -1,5 +1,3 @@
-Dont use the public version right now, there is a security gap that
-
 # PBX API Users Gateway
 
 **Give family and friends a phone line into your home PBX (Incredible PBX / FreePBX 17) without
