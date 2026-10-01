@@ -1,0 +1,38 @@
+#!/usr/bin/env php
+<?php
+/**
+ * apiusers-remote – the ONLY thing the Docker panel can run on the PBX.
+ *
+ * Installed to /usr/local/sbin/apiusers-remote by install-pbx.sh.
+ * Reached via SSH forced command:
+ *   user "apiremote", authorized_keys:
+ *     from="192.168.8.100",restrict,command="sudo -n -u asterisk /usr/local/sbin/apiusers-remote" ssh-ed25519 AAAA...
+ *   sudoers: apiremote ALL=(asterisk) NOPASSWD: /usr/local/sbin/apiusers-remote
+ *
+ * Protocol: one JSON object on stdin, one JSON object on stdout.
+ *   {"token":"...","op":"list|get|create|update|delete|rotate|kill|audit|calls","args":{},"actor":"name"}
+ * Every request is handled as source='remote', so the safety lock applies
+ * (see lib/Engine.php remoteGuard()).
+ */
+
+if (PHP_SAPI !== 'cli') { exit(1); }
+
+$raw = stream_get_contents(STDIN, 65536);
+$req = json_decode((string)$raw, true);
+if (!is_array($req)) {
+    echo json_encode(['ok' => false, 'error' => 'bad json']), "\n";
+    exit(0);
+}
+
+$bootstrap_settings = ['freepbx_auth' => false, 'cdrdb' => false];
+// FreePBX bootstrap prints nothing on success; capture anything stray so stdout stays JSON.
+ob_start();
+include '/etc/freepbx.conf';
+ob_end_clean();
+
+try {
+    $res = \FreePBX::Apiusers()->remoteCall($req);
+} catch (\Throwable $e) {
+    $res = ['ok' => false, 'error' => 'pbx error: ' . $e->getMessage()];
+}
+echo json_encode($res, JSON_UNESCAPED_SLASHES), "\n";

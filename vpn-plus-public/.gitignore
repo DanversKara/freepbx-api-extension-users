@@ -1,0 +1,11 @@
+# secrets and per-install state
+docker-gateway/.env
+docker-gateway/ssh/
+# private home-lab notes for Claude Code
+CLAUDE.local.md
+# junk
+__pycache__/
+*.pyc
+tests/out_*.conf
+.DS_Store
+Thumbs.db

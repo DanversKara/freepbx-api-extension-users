@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# =============================================================================
+#  update-pbx.sh – update the API Users module on the PBX to this copy of the repo
+#  Run ON the PBX as root, from the project folder:   bash scripts/update-pbx.sh
+#
+#  Copies the module files, fixes ownership, and regenerates the Asterisk config
+#  from the saved users (needed when a new version changes the generated dialplan).
+#  Users, passwords, permissions and the remote token are kept: they live in the DB.
+#  Calls in progress are not dropped (pjsip + dialplan reload only).
+# =============================================================================
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
+WEBROOT="${WEBROOT:-/var/www/html}"
+DST="$WEBROOT/admin/modules/apiusers"
+
+[ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
+[ -d "$DST" ] || { echo "module not installed yet - run scripts/install-pbx.sh first"; exit 1; }
+
+echo "==> logic tests"
+php "$HERE/tests/engine_test.php" | tail -1
+
+echo "==> copying module to $DST"
+cp -a "$HERE/pbx-module/apiusers/." "$DST/"
+install -m 755 -o root -g root "$HERE/pbx-module/apiusers/bin/apiusers-remote" /usr/local/sbin/apiusers-remote
+fwconsole chown >/dev/null
+
+echo "==> regenerating Asterisk config from saved users"
+php -r '
+  $bootstrap_settings = ["freepbx_auth" => false];
+  ob_start(); include "/etc/freepbx.conf"; ob_end_clean();
+  $m = FreePBX::Apiusers(); $st = $m->loadState(); $m->apply($st, $st);
+  echo "   ", count($st["users"]), " user(s) written\n";'
+
+asterisk -rx "dialplan show apiusers-netcheck" >/dev/null 2>&1 && echo "   OK  dialplan loaded" || echo "   WARNING: dialplan not loaded"
+echo "Done. Refresh the API Users page (Ctrl+F5)."
