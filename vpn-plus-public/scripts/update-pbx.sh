@@ -32,6 +32,13 @@ CRON
 chmod 644 /etc/cron.d/apiusers
 fwconsole chown >/dev/null
 
+# A new version number in module.xml makes FreePBX refuse to load the module until it is
+# installed again ("Unable to locate the FreePBX BMO Class 'Apiusers'"). Safe to repeat:
+# install() keeps users/settings/token and rewrites the generated config.
+echo "==> registering the module version with FreePBX"
+fwconsole ma install apiusers >/dev/null || { echo "ERROR: fwconsole ma install apiusers failed"; exit 1; }
+fwconsole chown >/dev/null
+
 echo "==> regenerating Asterisk config from saved users"
 php -r '
   $bootstrap_settings = ["freepbx_auth" => false];

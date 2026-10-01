@@ -170,6 +170,11 @@ AstroWarp on cellular: registration, allowed and blocked extensions, 88xx inboun
   FreePBX's AMI `Command` (`$r['data']`) with `asterisk -rx` as fallback. Not yet seen on the real PBX: the AMI
   `data` shape on Asterisk 22 and the `[YYYY-MM-DD HH:MM:SS]` FreePBX log date format (both handled).
 
+- Field report (Oct 1 2026, real PBX): after bumping module.xml to 17.0.2, `apiusers-presence` failed with
+  "Unable to locate the FreePBX BMO Class 'Apiusers'" until `fwconsole ma install apiusers` ran. FreePBX won't load
+  a module whose files are newer than its registered version. update-pbx.sh now runs `fwconsole ma install apiusers`.
+  Bump the version in module.xml whenever the module changes, and always update through update-pbx.sh.
+
 ## Ideas / hardening backlog
 
 - Incredible PBX's default iptables trust 192.168.0.0/16. Consider limiting SSH and the web GUI to admin hosts.
