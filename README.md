@@ -1,7 +1,7 @@
 # PBX API Users Gateway
 
 **Give family and friends a phone line into your home PBX (Incredible PBX / FreePBX 17) without
-giving them your PBX.** They get locked-down Zoiper accounts that aren't real extensions. You decide
+giving them your PBX.** They get locked-down voip accounts that aren't real extensions. You decide
 exactly what each person can dial, and your PBX is never exposed to the internet.
 
 This repository has **two editions**. Pick the one that fits how your users will connect.
