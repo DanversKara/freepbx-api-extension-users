@@ -31,12 +31,21 @@
     '.apiu-tabs .at-bar button:hover{opacity:1}',
     '.apiu-tabs .at-bar button.at-on{opacity:1;font-weight:600;border-bottom-color:#1f6feb}',
     '.apiu-tabs .at-n{display:inline-block;min-width:20px;padding:0 6px;border-radius:99px;font-size:11.5px;line-height:18px;text-align:center;background:rgba(128,128,128,.18);font-weight:600}',
-    '.apiu-tabs .at-n.at-bad{background:#cf222e;color:#fff}',
+    '.apiu-tabs .at-n.at-bad{background:transparent;color:#cf222e;border:1px solid rgba(207,34,46,.5)}',
+    '.apiu-tabs .at-n.at-yel{background:#d29922;color:#1d1300}',
+    '.apiu-tabs .at-bar button.at-alarm{color:#e5534b;opacity:1}',
+    '.apiu-tabs .at-n.at-glow{color:#ff4d4f;border-color:#ff4d4f;text-shadow:0 0 6px rgba(255,77,79,.95);animation:atg 1.6s ease-in-out infinite}',
+    '@keyframes atg{0%,100%{box-shadow:0 0 3px rgba(255,77,79,.45)}50%{box-shadow:0 0 12px rgba(255,77,79,.95)}}',
+    /* audit log rows (server-rendered on both pages) */
+    '.apiu-tabs tr.au-bad td{background:rgba(207,34,46,.10)}.apiu-tabs tr.au-bad td:first-child{box-shadow:inset 4px 0 0 #cf222e}',
+    '.apiu-tabs tr.au-warn td{background:rgba(219,109,40,.11)}.apiu-tabs tr.au-warn td:first-child{box-shadow:inset 4px 0 0 #db6d28}',
+    '.apiu-tabs tr.au-yel td{background:rgba(210,153,34,.13)}.apiu-tabs tr.au-yel td:first-child{box-shadow:inset 4px 0 0 #d29922}',
+    '.apiu-tabs tr.au-ok td:first-child{box-shadow:inset 4px 0 0 #2da44e}',
     '.apiu-tabs .at-n:empty{display:none}',
     '.apiu-tabs > section[data-panel]{display:none}.apiu-tabs > section.at-show{display:block}',
     /* dashboard */
     '.apiu-live{--ok:#1a7f37;--warn:#9a6700;--bad:#cf222e;--info:#1f6feb;--line:rgba(128,128,128,.25);--soft:rgba(128,128,128,.07)}',
-    '@media (prefers-color-scheme:dark){.apiu-live:not(.apiu-light){--ok:#3fb950;--warn:#d29922;--bad:#ff7b72;--info:#58a6ff}}',
+    '@media (prefers-color-scheme:dark){.apiu-live:not(.apiu-light){--ok:#3fb950;--warn:#d29922;--bad:#ff7b72;--info:#58a6ff;--ring:#161b22}}',
     '.apiu-live .ad-top{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-bottom:10px}',
     '.apiu-live .ad-mute{opacity:.66;font-size:12.5px}',
     '.apiu-live .ad-live{display:inline-flex;align-items:center;gap:6px;font-size:12.5px}',
@@ -57,7 +66,21 @@
     '.apiu-live .ad-row{display:flex;gap:11px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line);min-width:0}',
     '.apiu-live .ad-row:last-child{border-bottom:0}',
     '.apiu-live .ad-av{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;background:rgba(31,111,235,.14);color:var(--info);position:relative}',
-    '.apiu-live .ad-av i{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;border:2px solid #fff;background:var(--c,#999)}',
+    '.apiu-live .ad-av i{position:absolute;right:-2px;bottom:-2px;width:12px;height:12px;border-radius:50%;border:2px solid var(--ring,#fff);background:var(--c,#999)}',
+    '.apiu-live .ad-av.ad-vpn{background:#1f6feb;color:#fff;font-size:11px;letter-spacing:.03em}',
+    '.apiu-live .ad-av.ad-pub{background:#d4760a;color:#fff;font-size:11px;letter-spacing:.03em}',
+    '.apiu-live .ad-ext{font-weight:600;opacity:.6;font-variant-numeric:tabular-nums}',
+    /* attention: live calls (yellow), danger (red), warning rows (orange) */
+    '.apiu-live .ad-card.ad-hot{border-color:#d29922;background:rgba(210,153,34,.09);box-shadow:0 0 0 1px rgba(210,153,34,.35),0 0 18px rgba(210,153,34,.18)}',
+    '.apiu-live .ad-card.ad-hot > header{background:rgba(210,153,34,.30);border-color:rgba(210,153,34,.6)}',
+    '.apiu-live .ad-tile.ad-hot{border-color:#d29922;background:rgba(210,153,34,.16)}',
+    '.apiu-live .ad-card.ad-danger{border-color:rgba(207,34,46,.7)}',
+    '.apiu-live .ad-card.ad-danger > header{background:rgba(207,34,46,.16);border-color:rgba(207,34,46,.5)}',
+    '.apiu-live .ad-tile.ad-danger{border-color:rgba(207,34,46,.7);background:rgba(207,34,46,.10)}',
+    '.apiu-live .ad-r-bad{background:rgba(207,34,46,.08);box-shadow:inset 4px 0 0 #cf222e}',
+    '.apiu-live .ad-r-warn{background:rgba(219,109,40,.10);box-shadow:inset 4px 0 0 #db6d28}',
+    '.apiu-live tr.ad-r-bad td{background:rgba(207,34,46,.08)}.apiu-live tr.ad-r-warn td{background:rgba(219,109,40,.10)}',
+    '.apiu-live .ad-orange{color:#db6d28}',
     '.apiu-live .ad-main{flex:1;min-width:0}',
     '.apiu-live .ad-l1{display:flex;flex-wrap:wrap;align-items:center;gap:4px 7px;font-weight:600}',
     '.apiu-live .ad-l2{font-size:12.5px;opacity:.75;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
@@ -135,7 +158,8 @@
   function evText(e) {
     var lab = EV[e.ev] || [e.ev, ''];
     var extra = e.ev === 'out' && e.dur ? ' after ' + dur(e.dur) : (e.ev === 'moved' && e.from ? ' (was ' + e.from + ')' : '');
-    return [el('span', { 'class': lab[1], text: lab[0] }), extra ? el('span', { 'class': 'ad-mute', text: extra }) : null];
+    return [el('span', { 'class': lab[1], text: lab[0] }), extra ? el('span', { 'class': 'ad-mute', text: extra }) : null,
+      e.flag === 'pub-door' ? el('span', { 'class': 'ad-orange', text: ' · VPN account on the public door' }) : null];
   }
   function post(cfg, extra) {
     var f = el('form', { method: 'post', action: cfg.url, style: 'display:none' });
@@ -168,6 +192,12 @@
       setCount: function (name, n) {
         var c = box.querySelector(':scope > .at-bar [data-count="' + name + '"]');
         if (c) c.textContent = (n === null || n === undefined) ? '' : String(n);
+      },
+      setAlarm: function (name, on) {           // glowing red count + red tab label
+        var c = box.querySelector(':scope > .at-bar [data-count="' + name + '"]');
+        var b = box.querySelector(':scope > .at-bar button[data-tab="' + name + '"]');
+        if (c) c.classList.toggle('at-glow', !!on);
+        if (b) b.classList.toggle('at-alarm', !!on);
       }
     };
   }
@@ -194,16 +224,16 @@
         if (confirm('Unlock ' + name + "'s dial-out code now? Only do this if you know the wrong PINs were theirs.")) post(opts.unlock, [['id', id]]);
       } }, ['Unlock now']);
     }
-    function card(title, count, link, body, foot) {
-      return el('div', { 'class': 'ad-card' }, [
+    function card(title, count, link, body, foot, extra) {
+      return el('div', { 'class': 'ad-card ' + (extra || '') }, [
         el('header', null, [
           el('h4', null, [title, count === null ? null : el('span', { 'class': 'ad-tag', text: String(count) })]),
           link ? el('a', { onclick: function () { tabs && tabs.show(link); } }, ['View all →']) : null
         ]),
         body, foot || null]);
     }
-    function tile(n, label, color) {
-      return el('div', { 'class': 'ad-tile', style: '--c:' + color }, [el('b', { text: String(n) }), el('span', { text: label })]);
+    function tile(n, label, color, extra) {
+      return el('div', { 'class': 'ad-tile ' + (extra || ''), style: '--c:' + color }, [el('b', { text: String(n) }), el('span', { text: label })]);
     }
 
     // ---------------------------------------------------------- dashboard
@@ -230,20 +260,26 @@
       var enabled = (d.users || []).filter(function (u) { return u.enabled; }).length;
       box.appendChild(el('div', { 'class': 'ad-tiles' }, [
         tile(devs.length, 'Signed in' + (enabled ? ' of ' + enabled : ''), 'var(--ok)'),
-        tile(calls.length, 'Live calls', 'var(--info)'),
+        tile(calls.length, 'Live calls', calls.length ? '#d29922' : 'var(--info)', calls.length ? 'ad-hot' : ''),
         tile(st.signins_24h || 0, 'Sign-ins, 24 h', '#8250df'),
-        tile(st.failed_24h || 0, 'Failed, 24 h', (st.failed_24h ? 'var(--bad)' : '#888'))
+        tile(st.failed_24h || 0, 'Failed, 24 h', (st.failed_24h ? 'var(--bad)' : '#888'), st.failed_24h ? 'ad-danger' : '')
       ]));
 
       // left: signed in + live calls
+      var ipsBy = {};
+      devs.forEach(function (x) { (ipsBy[x.user_id] = ipsBy[x.user_id] || {})[x.ip] = 1; });
+      var twice = {};
+      Object.keys(ipsBy).forEach(function (id) { if (Object.keys(ipsBy[id]).length > 1) twice[id] = Object.keys(ipsBy[id]); });
       var devRows = devs.map(function (x) {
         var online = x.status === 'Avail' || x.status === 'Reachable';
         var unk = x.status === 'Unknown' || x.status === 'NonQual';
         var color = online ? 'var(--ok)' : (unk ? '#999' : 'var(--warn)');
-        return el('div', { 'class': 'ad-row' }, [
-          el('div', { 'class': 'ad-av', style: '--c:' + color, title: online ? 'Online' : (unk ? 'Checking' : 'Not answering') }, [initials(x.name), el('i')]),
+        var rowCls = 'ad-row' + (twice[x.user_id] ? ' ad-r-bad' : (x.warn ? ' ad-r-warn' : ''));
+        return el('div', { 'class': rowCls }, [
+          el('div', { 'class': 'ad-av ' + (x.public ? 'ad-pub' : 'ad-vpn'), style: '--c:' + color,
+            title: (x.public ? 'Public' : 'VPN') + ' account · ' + (online ? 'online' : (unk ? 'checking' : 'not answering')) }, [x.public ? 'PUB' : 'VPN', el('i')]),
           el('div', { 'class': 'ad-main' }, [
-            el('div', { 'class': 'ad-l1' }, [x.name, typeTag(x.public), doorTag(x.door)]),
+            el('div', { 'class': 'ad-l1' }, [x.name, x.reach ? el('span', { 'class': 'ad-ext', text: x.reach }) : null, doorTag(x.door)]),
             el('div', { 'class': 'ad-l2', title: x.app || '' }, [(x.ip ? x.ip + (x.port ? ':' + x.port : '') : '') + (x.app ? ' · ' + x.app : '')])
           ]),
           el('div', { 'class': 'ad-side' }, [
@@ -256,12 +292,20 @@
       var warn = devs.filter(function (x) { return x.warn; }).map(function (x) {
         return el('div', { 'class': 'ad-alert', style: 'margin:8px 12px', text: '⚠ ' + x.name + ': ' + x.warn });
       });
+      var seenTwice = {};
+      devs.forEach(function (x) {
+        if (!twice[x.user_id] || seenTwice[x.user_id]) return;
+        seenTwice[x.user_id] = 1;
+        warn.unshift(el('div', { 'class': 'ad-alert', style: 'margin:8px 12px', text: '⚠ ' + x.name + ' is signed in from ' + twice[x.user_id].length +
+          ' places at once (' + twice[x.user_id].join(', ') + '). If that isn\'t them on two phones, give them a New password.' }));
+      });
       var signedIds = {}; devs.forEach(function (x) { signedIds[x.user_id] = true; });
       var offline = (d.users || []).filter(function (u) { return u.enabled && !signedIds[u.id]; }).map(function (u) { return u.name; });
       var left = el('div', { 'class': 'ad-col' }, [
         card('Signed in now', devs.length, null,
           el('div', null, devRows.length ? devRows.concat(warn) : [el('div', { 'class': 'ad-empty', text: 'Nobody is signed in.' })]),
-          offline.length ? el('div', { 'class': 'ad-foot', text: 'Not signed in: ' + offline.join(', ') }) : null),
+          offline.length ? el('div', { 'class': 'ad-foot', text: 'Not signed in: ' + offline.join(', ') }) : null,
+          (Object.keys(twice).length || warn.length) ? 'ad-danger' : ''),
         card('Live calls', calls.length, null, el('div', null, calls.length ? calls.map(function (c) {
           var other = c.other ? (c.other.indexOf('DISA-') === 0 ? 'DISA ' + c.other.slice(5) : c.other) : '…';
           var stCls = /Blocked/.test(c.state) ? 'ad-bad' : (c.state === 'Talking' ? 'ad-ok' : 'ad-mute');
@@ -273,12 +317,12 @@
             ]),
             el('div', { 'class': 'ad-side' }, [el('div', { 'class': 'ad-timer', 'data-s': String(c.seconds), text: clock(c.seconds) }), hangupBtn(c)])
           ]);
-        }) : [el('div', { 'class': 'ad-empty', text: 'No calls right now.' })]))
+        }) : [el('div', { 'class': 'ad-empty', text: 'No calls right now.' })]), null, calls.length ? 'ad-hot' : '')
       ]);
 
       // right: last 5 sign-ins + last 5 failed
       var sRows = (d.signins || []).map(function (e) {
-        return el('div', { 'class': 'ad-row' }, [
+        return el('div', { 'class': 'ad-row' + (e.flag ? ' ad-r-warn' : '') }, [
           el('div', { 'class': 'ad-main' }, [
             el('div', { 'class': 'ad-l1' }, [e.name || e.user_id, doorTag(e.door)]),
             el('div', { 'class': 'ad-l2' }, evText(e))
@@ -287,7 +331,7 @@
         ]);
       });
       var fRows = (d.failed || []).map(function (f) {
-        return el('div', { 'class': 'ad-row' }, [
+        return el('div', { 'class': 'ad-row ' + (f.kind.indexOf('unknown') === 0 ? 'ad-r-warn' : 'ad-r-bad') }, [
           el('div', { 'class': 'ad-main' }, [
             el('div', { 'class': 'ad-l1' }, [f.name ? f.name : el('code', { text: f.username }), doorTag(f.door)]),
             el('div', { 'class': 'ad-l2' }, [el('span', { 'class': f.kind.indexOf('unknown') === 0 ? 'ad-warn' : 'ad-bad', text: f.kind })])
@@ -297,7 +341,8 @@
       });
       var right = el('div', { 'class': 'ad-col' }, [
         card('Last 5 sign-ins', null, 'history', el('div', null, sRows.length ? sRows : [el('div', { 'class': 'ad-empty', text: 'Nothing recorded yet.' })])),
-        card('Last 5 failed sign-ins', null, 'failed', el('div', null, fRows.length ? fRows : [el('div', { 'class': 'ad-empty', text: 'No failed sign-ins.' })]))
+        card('Last 5 failed sign-ins', null, 'failed', el('div', null, fRows.length ? fRows : [el('div', { 'class': 'ad-empty', text: 'No failed sign-ins.' })]), null,
+          st.failed_24h ? 'ad-danger' : '')
       ]);
       box.appendChild(el('div', { 'class': 'ad-grid' }, [left, right]));
       tickAge();
@@ -341,7 +386,8 @@
           : [el('td', { 'class': 'ad-mute', text: when(r.t) || r.time }), el('td', null, [r.name ? r.name : el('code', { text: r.username })]),
              el('td', null, [el('span', { 'class': r.kind.indexOf('unknown') === 0 ? 'ad-warn' : 'ad-bad', text: r.kind })]),
              el('td', null, [r.door ? doorTag(r.door) : el('span', { 'class': 'ad-mute', text: r.server || '—' })])];
-        return el('tr', { 'class': picked[r.id] ? 'ad-sel' : '' }, [el('td', { style: 'width:28px' }, [cb])].concat(cells));
+        var tint = kind === 'history' ? (r.flag ? ' ad-r-warn' : '') : (r.kind.indexOf('unknown') === 0 ? ' ad-r-warn' : ' ad-r-bad');
+        return el('tr', { 'class': (picked[r.id] ? 'ad-sel' : '') + tint }, [el('td', { style: 'width:28px' }, [cb])].concat(cells));
       });
       var hcells = kind === 'history' ? ['Time', 'User', 'What', 'Door', 'Address', 'App'] : ['Time', 'User', 'Problem', 'Door'];
       box.appendChild(el('div', { 'class': 'ad-scroll' }, [el('table', { 'class': 'ad-t' }, [
@@ -370,6 +416,9 @@
       if (data) {
         tabs.setCount('history', data.signins_total);
         tabs.setCount('failed', data.failed_total || null);
+        tabs.setAlarm('failed', data.stats && data.stats.failed_24h > 0);
+        var nc = (data.calls || []).length;
+        tabs.setCount('dash', nc ? '● ' + nc + (nc === 1 ? ' call' : ' calls') : null);
       }
       if (hist) {
         tabs.setCount('history', hist.signins.length);

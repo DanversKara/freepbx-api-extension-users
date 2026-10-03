@@ -1,0 +1,51 @@
+# API Users gateway – runs on the gateway host (e.g. a Docker VM/LXC at 192.168.8.100).
+# kamailio + rtpengine use host networking (SIP/RTP need the real IP).
+# The panel is published ONLY on the LAN IP; Proxmox firewall lets only NPM (192.168.8.147) reach it.
+name: pbx-api-gateway
+
+services:
+  kamailio:
+    build: ./kamailio
+    network_mode: host
+    env_file: .env
+    restart: unless-stopped
+    depends_on: [rtpengine]
+
+  rtpengine:
+    build: ./rtpengine
+    network_mode: host
+    env_file: .env
+    restart: unless-stopped
+
+  panel:
+    build: ./panel
+    env_file: .env
+    ports:
+      - "${GW_LAN_IP}:8000:8000"
+    volumes:
+      - ./ssh:/ssh:ro
+    restart: unless-stopped
+
+  # Optional user portal (each person sees only their own account). Own SSH key in ./ssh-portal,
+  # which on the PBX can only run "apiusers-remote --portal". Like the panel: LAN IP only, NPM in front.
+  portal:
+    build: ./portal
+    env_file: .env
+    ports:
+      - "${GW_LAN_IP}:8010:8010"
+    volumes:
+      - ./ssh-portal:/ssh:ro
+    restart: unless-stopped
+
+  # Optional Cloudflare dynamic DNS for the public door (CF_API_TOKEN + CF_RECORD in .env).
+  # Keeps e.g. phone.example.com pointing at your home IP, DNS only. Idle when not configured.
+  # Gets only its own settings (not the PBX tokens in .env).
+  ddns:
+    build: ./ddns
+    environment:
+      CF_API_TOKEN: ${CF_API_TOKEN:-}
+      CF_RECORD: ${CF_RECORD:-}
+      CF_ZONE_ID: ${CF_ZONE_ID:-}
+      DDNS_INTERVAL: ${DDNS_INTERVAL:-300}
+      CF_TTL: ${CF_TTL:-60}
+    restart: unless-stopped

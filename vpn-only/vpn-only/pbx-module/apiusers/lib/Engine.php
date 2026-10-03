@@ -65,6 +65,13 @@ class Engine
             // Shown to users as "what to type into Zoiper". Display only.
             'client_vpn_addr' => '',                    // AstroWarp virtual IP of 192.168.8.100 + :5070
             'client_lan_addr' => '192.168.8.100:5072',  // at home on Wi-Fi
+            // E-mail alerts (lib/Alerts.php, sent by the once-a-minute cron job). Empty alert_email = off.
+            'alert_email'    => '',
+            'smtp_host'      => '', 'smtp_port' => 587, 'smtp_security' => 'starttls',
+            'smtp_user'      => '', 'smtp_pass' => '', 'smtp_from' => '', 'smtp_verify' => true,
+            // User portal (docker-gateway/portal): users see only their own data. Off until the admin turns it on.
+            'portal_enabled' => false,
+            'portal_token'   => '',
             // ZOIPER-PRO-TODO: add 'client_tls_addr' => 'pbx.yourdomain.com:5443' when public TLS exists.
         ];
     }
@@ -72,6 +79,10 @@ class Engine
     public static function normalizeState(array $s): array
     {
         $s['settings'] = array_merge(self::defaultSettings(), $s['settings'] ?? []);
+        // Example text typed in by mistake ("10.x.x.x:5070") would end up on people's share cards: drop it.
+        foreach (['client_vpn_addr', 'client_lan_addr'] as $k) {
+            if (preg_match('/(^|\.)x\.x(\.|:|$)/i', (string)$s['settings'][$k])) $s['settings'][$k] = '';
+        }
         $s['users'] = $s['users'] ?? [];
         $s['audit'] = $s['audit'] ?? [];
         return $s;
@@ -89,8 +100,17 @@ class Engine
      */
     public function run(string $op, array $args, string $source, string $actor = ''): array
     {
-        if (!in_array($source, ['local', 'remote'], true)) {
+        if (!in_array($source, ['local', 'remote', 'portal'], true)) {
             return self::err('bad source');
+        }
+        if ($source === 'portal') {
+            // The user portal may only give a user a new password for THEIR OWN account (the module
+            // looks the account up from the portal login; the portal never chooses the id).
+            if (empty($this->state['settings']['portal_enabled'])) return self::err('the user portal is turned off on the PBX');
+            if ($op !== 'rotate') {
+                $this->audit($source, $actor, $op, $args['id'] ?? '', 'DENIED: not allowed from the user portal');
+                return self::err('not allowed from the user portal');
+            }
         }
         if ($source === 'remote') {
             $g = $this->remoteGuard($op, $args);
@@ -224,6 +244,7 @@ class Engine
             'external'      => false,
             'e911'          => false,
             'international' => false,
+            'portal_login'  => '',      // Authentik user name / e-mail that may open this account in the user portal
             'confs'         => [],      // conference rooms they may join (FreePBX Conferences)
             'features'      => [],      // exact feature codes they may dial (VPN accounts only)
             'allowed'       => [],
@@ -287,6 +308,14 @@ class Engine
             sort($u['allowed']);
             $u['allowed'] = array_map('strval', $u['allowed']);
         }
+        // ---- user portal login (one login can own several accounts) ------------
+        if (array_key_exists('portal_login', $a)) {
+            $pl = strtolower(trim((string)$a['portal_login']));
+            if ($pl !== '' && !preg_match('/^[a-z0-9._@+-]{2,100}$/', $pl)) return 'portal login may only contain letters, digits and . _ @ + -';
+            // The same login may be put on several accounts: one person, one account per phone.
+            $u['portal_login'] = $pl;
+        }
+
         // ---- conference rooms + feature codes ---------------------------------
         $u += ['confs' => [], 'features' => []];
         if (array_key_exists('confs', $a)) {
@@ -348,9 +377,45 @@ class Engine
             if (array_key_exists($k, $a)) {
                 $v = trim((string)$a[$k]);
                 if ($v !== '' && !preg_match('/^[A-Za-z0-9.-]{1,253}(:\d{1,5})?$/', $v)) return self::err("$k must look like host:port");
+                if (preg_match('/(^|\.)x\.x(\.|:|$)/i', $v)) {
+                    $label = ['client_vpn_addr' => 'Zoiper server on the VPN', 'client_lan_addr' => 'Zoiper server at home'][$k];
+                    return self::err("$label still has the example text ($v): type the real address, e.g. 10.0.1.1:5070");
+                }
                 $s[$k] = $v;
             }
         }
+        // ---- e-mail alerts
+        foreach (['alert_email', 'smtp_from'] as $k) {
+            if (array_key_exists($k, $a)) {
+                $v = trim((string)$a[$k]);
+                if ($v !== '' && !filter_var($v, FILTER_VALIDATE_EMAIL)) return self::err("$k is not an e-mail address");
+                $s[$k] = $v;
+            }
+        }
+        if (array_key_exists('smtp_host', $a)) {
+            $v = trim((string)$a['smtp_host']);
+            if ($v !== '' && !preg_match('/^[A-Za-z0-9.-]{1,253}$/', $v)) return self::err('mail server must be a host name or IP');
+            $s['smtp_host'] = $v;
+        }
+        if (array_key_exists('smtp_port', $a)) {
+            $p = (int)$a['smtp_port'];
+            if ($p < 1 || $p > 65535) return self::err('mail server port invalid');
+            $s['smtp_port'] = $p;
+        }
+        if (array_key_exists('smtp_security', $a)) {
+            if (!in_array($a['smtp_security'], ['starttls', 'ssl', 'none'], true)) return self::err('mail security must be starttls, ssl or none');
+            $s['smtp_security'] = $a['smtp_security'];
+        }
+        if (array_key_exists('smtp_user', $a)) $s['smtp_user'] = substr(trim((string)$a['smtp_user']), 0, 200);
+        if (isset($a['smtp_pass']) && $a['smtp_pass'] !== '') $s['smtp_pass'] = substr((string)$a['smtp_pass'], 0, 500);   // empty = keep
+        if (array_key_exists('smtp_verify', $a)) $s['smtp_verify'] = self::bool($a['smtp_verify']);
+        if ($s['alert_email'] !== '' && ($s['smtp_host'] === '' || $s['smtp_from'] === '')) {
+            return self::err('to send alerts, also fill in the mail server and the sender address');
+        }
+        if (array_key_exists('portal_enabled', $a)) $s['portal_enabled'] = self::bool($a['portal_enabled']);
+        if (!empty($a['regen_portal_token']) || ($s['portal_token'] ?? '') === '') $s['portal_token'] = bin2hex(random_bytes(24));
+        if (array_key_exists('portal_enabled', $a)) $s['portal_enabled'] = self::bool($a['portal_enabled']);
+        if (!empty($a['regen_portal_token']) || ($s['portal_token'] ?? '') === '') $s['portal_token'] = bin2hex(random_bytes(24));
         if (!empty($a['regen_token'])) $s['remote_token'] = bin2hex(random_bytes(24));
         $this->audit($source, $actor, 'settings', '', 'settings updated');
         return ['ok' => true, 'changed' => true];
@@ -360,11 +425,14 @@ class Engine
 
     public function ensureToken(): bool
     {
-        if ($this->state['settings']['remote_token'] === '') {
-            $this->state['settings']['remote_token'] = bin2hex(random_bytes(24));
-            return true;
+        $changed = false;
+        foreach (['remote_token', 'portal_token'] as $k) {
+            if (($this->state['settings'][$k] ?? '') === '') {
+                $this->state['settings'][$k] = bin2hex(random_bytes(24));
+                $changed = true;
+            }
         }
-        return false;
+        return $changed;
     }
 
     private function nextReach(): int

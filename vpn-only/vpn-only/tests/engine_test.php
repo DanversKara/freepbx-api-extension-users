@@ -79,6 +79,13 @@ $pj = ConfigGen::pjsip($e->state());
 ok(strpos($pj, 'type=endpoint') === false && strpos($pj, 'KILL SWITCH') !== false, 'kill removes endpoints');
 ok(count(array_filter($e->state()['audit'], fn($a) => strpos($a['detail'], 'DENIED') === 0)) >= 5, 'denials audited');
 
+// example text in the address fields never reaches a share card
+$px = new Engine(['settings' => ['client_vpn_addr' => '10.x.x.x:5070']]);
+ok($px->settings()['client_vpn_addr'] === '', 'saved "10.x.x.x:5070" is dropped');
+$r = $px->run('settings', ['client_vpn_addr' => '10.x.x.x:5070'], 'local', 't');
+ok(!$r['ok'] && strpos($r['error'], 'example text') !== false, 'typing the example text is refused');
+ok($px->run('settings', ['client_vpn_addr' => '10.0.1.1:5070'], 'local', 't')['ok'], 'a real VPN address is accepted');
+
 file_put_contents(sys_get_temp_dir() . '/apiusers_out_pjsip.conf', ConfigGen::pjsip(array_merge($e->state(), ['settings' => array_merge($e->settings(), ['kill_switch' => false])])));
 file_put_contents(sys_get_temp_dir() . '/apiusers_out_extensions.conf', ConfigGen::dialplan(array_merge($e->state(), ['settings' => array_merge($e->settings(), ['kill_switch' => false])])));
 echo $fail ? "\n$fail FAILED\n" : "\nALL PASSED\n";

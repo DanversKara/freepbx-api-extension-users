@@ -27,7 +27,13 @@ You also get:
   history, and failed sign-ins (wrong passwords, unknown usernames).
 - **Conference rooms and feature codes per user**: tick the FreePBX conference rooms they may join, and
   (on the PBX page only) feature codes such as `*43` echo test or `555` ChanSpy.
+- **E-mail alerts**: failed sign-ins, the same account signed in from two places at once, the kill switch and risky remote actions, as one combined e-mail at most every few minutes.
+- **User portal (optional)**: each person signs in through Authentik and sees only their own phones (one login can
+  have several phones), calls, sign-ins and failed attempts, and can get a new Zoiper password per phone.
 - **Per-user call logs and an audit log.**
+
+**Setting this up for family?** Follow **[docs/family-setup.md](docs/family-setup.md)**: one phone account per
+device, one login per person, and how to keep phone bills low.
 
 You manage users from a page inside FreePBX, or optionally from a **remote web panel behind
 Nginx Proxy Manager + Authentik**. A **safety lock** stops the remote panel from ever turning on
@@ -47,6 +53,8 @@ paid or emergency calling.
 - [Add users & set up Zoiper](#add-users--set-up-zoiper)
 - [Conference rooms and feature codes](#conference-rooms-and-feature-codes)
 - [Live view](#live-view)
+- [E-mail alerts](#e-mail-alerts)
+- [User portal (optional)](#user-portal-optional)
 - [Remote panel (optional)](#remote-panel-optional)
 - [Read this about 911](#-read-this-about-911)
 - [Day-to-day operations](#day-to-day-operations)
@@ -401,6 +409,50 @@ Both the PBX page and the remote panel open on a **Dashboard** tab. The other ta
 
 ---
 
+## E-mail alerts
+
+PBX page → **Settings → E-mail alerts**: the address to alert, a sender address, and your mail server
+(STARTTLS on 587 is the usual choice; use a dedicated mailbox such as `pbx-alerts@yourdomain`). Save, then
+**Send test e-mail**. Leave the alert address empty to turn alerts off.
+
+The PBX checks once a minute (the same cron job as the sign-in history) and sends **one combined e-mail**,
+at most every 5 minutes, or after 1 minute if something urgent is waiting:
+
+| Alert | When |
+|---|---|
+| 🔴 Failed sign-ins | wrong password, unknown API username |
+| 🔴 Same account in two places | one account signed in from **two different IP addresses for 2+ minutes** (a phone briefly reconnecting doesn't count) |
+| 🔴 / 🟠 Admin events | denied remote-panel attempts, kill switch on/off, history deleted, new passwords from the panel or portal |
+
+Each thing is reported once (repeating ones at most hourly). If the mail server can't be reached the alerts wait
+and are retried every minute; the last problem is shown under the settings.
+
+---
+
+## User portal (optional)
+
+A separate page where each person signs in with **their own Authentik login** (e-mail + password, 2FA
+recommended) and sees **only their own phones**. One login can have several phones (one phone account per device:
+put the same *User portal login* on each). For each phone:
+
+- their name, the number people at home dial to reach them, and the account type
+- their signed-in phones and calls in progress (refreshes on its own)
+- who they can call, conference rooms, feature codes, outside calls and whether 911 works
+- **call history** (from the PBX's call records), **sign-ins** and **failed attempts**
+- its Zoiper settings and a **Get a new password** button (the new password and QR codes are shown once)
+
+plus their calls, sign-ins and failed attempts for all their phones together, with a column showing which phone.
+Step-by-step for family: **[docs/family-setup.md](docs/family-setup.md)**.
+
+It never shows the current password or anything about other people, and it can't change anything else:
+it runs in its own container (`portal`, port 8010) with **its own SSH key**, which on the PBX can only run
+`apiusers-remote --portal`. Turn it on under **Settings → User portal** and link people on their Edit form
+(**User portal login** = their Authentik user name). Setup: **[docs/npm-authentik.md → User portal](docs/npm-authentik.md#user-portal-optional-each-person-sees-only-their-own-account)**.
+
+> Keep the admin panel and the portal as **two separate Authentik applications**: the admin app bound to you only.
+
+---
+
 ## Remote panel (optional)
 
 The panel is a small stateless web app on the gateway host (port 8000, LAN only). Put it behind
@@ -444,14 +496,14 @@ Untick **"Allow the remote panel"** on the PBX page to lock the panel out entire
 | Watch SIP on the PBX | `asterisk -rvvv` then `pjsip set logger on` |
 | Update the gateway | `git pull && cd docker-gateway && docker compose up -d --build` |
 | Update the module | `git pull && bash scripts/update-pbx.sh` (copies the module, regenerates the dialplan, keeps users) |
-| Run the logic tests | `php tests/engine_test.php`, `live_test.php` and `features_test.php` → `ALL PASSED` |
+| Run the logic tests | `php tests/engine_test.php`, `live_test.php`, `features_test.php` and `alerts_test.php` → `ALL PASSED` |
 | Edited the share card or Live view? | Edit `pbx-module/apiusers/assets/share-card.js` / `live-view.js`, then `bash scripts/sync-assets.sh` (copies them to the panel) |
 
 **Uninstall (PBX):**
 
 - `fwconsole ma uninstall apiusers && fwconsole ma remove apiusers`
 - Remove the `apiusers` include lines from `pjsip_custom.conf` and `extensions_custom.conf`.
-- `rm /usr/local/sbin/apiusers-remote /usr/local/sbin/apiusers-presence /etc/cron.d/apiusers /etc/sudoers.d/apiusers-remote && userdel -r apiremote`
+- `rm /usr/local/sbin/apiusers-remote /usr/local/sbin/apiusers-presence /etc/cron.d/apiusers /etc/sudoers.d/apiusers-remote /etc/sudoers.d/apiusers-portal && userdel -r apiremote; userdel -r apiportal`
 
 **Uninstall (gateway):** `docker compose down`.
 
@@ -514,6 +566,7 @@ pbx-module/apiusers/       FreePBX 17 module (source of truth)
   lib/Engine.php             rules, validation, safety lock, audit (pure PHP, unit-tested)
   lib/ConfigGen.php          generates pjsip_apiusers.conf + extensions_apiusers.conf
   lib/Live.php               Live view: reads Asterisk's CLI output (pure PHP, unit-tested)
+  lib/Alerts.php, Mailer.php alert rules + a small SMTP client (pure PHP, unit-tested)
   Apiusers.class.php         FreePBX glue: DB, reload, hangup, CDR, remote entry point
   views/page.php             the admin page
   assets/                    share card (share-card.js), Live view (live-view.js), vendored QR library (MIT)
@@ -523,10 +576,11 @@ docker-gateway/            runs on the gateway host
   kamailio/                  SIP front door (config template + entrypoint)
   rtpengine/                 audio relay
   panel/                     remote admin panel (Flask, stateless)
+  portal/                    optional user portal (Flask, stateless, own SSH key)
   docker-compose.yml, .env.example
 scripts/                   install-pbx.sh, update-pbx.sh, setup-docker.sh, proxmox-firewall.sh, sync-assets.sh
 docs/npm-authentik.md      reverse proxy + SSO for the panel
-tests/                     engine_test.php, live_test.php, features_test.php (php tests/<file>)
+tests/                     engine, live, features, alerts tests (php tests/<file>)
 screenshot_images/         screenshots used in this README
 CLAUDE.md                  deep technical notes for maintainers / AI assistants
 ```

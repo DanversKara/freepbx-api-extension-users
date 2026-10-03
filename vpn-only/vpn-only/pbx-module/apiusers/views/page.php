@@ -8,6 +8,17 @@ namespace ApiUsers;
 
 function h($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
+/** Audit-log row color: red = denied / kill switch, orange = hang-up, yellow = history deleted / unlock, green = released. */
+function auditClass(array $a): string
+{
+    $op = (string)($a['op'] ?? ''); $d = (string)($a['detail'] ?? '');
+    if (strpos($d, 'DENIED') === 0 || $op === 'kill') return 'au-bad';
+    if ($op === 'hangup') return 'au-warn';
+    if ($op === 'history_clear' || $op === 'disa_unlock') return 'au-yel';
+    if ($op === 'unkill') return 'au-ok';
+    return '';
+}
+
 /** A short warning for feature codes that are more than a convenience. */
 function codeRisk(string $s): string
 {
@@ -46,6 +57,7 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
                     'e911' => isset($_POST['e911']),
                     'international' => isset($_POST['international']),
                     'allowed' => $_POST['allowed'] ?? [],
+                    'portal_login' => $_POST['portal_login'] ?? '',
                     'confs' => array_merge((array)($_POST['confs'] ?? []), Engine::codeList($_POST['confs_text'] ?? '')),
                     'features' => array_merge((array)($_POST['features'] ?? []), Engine::codeList($_POST['features_text'] ?? '')),
                     'max_calls' => $_POST['max_calls'] ?? 1,
@@ -73,6 +85,10 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
                     if ($r['ok']) $msg = 'Deleted ' . (int)$r['deleted'] . ' entr' . ((int)$r['deleted'] === 1 ? 'y' : 'ies') . '.';
                     $tab = $kind === 'failed' ? 'failed' : 'history';
                     break;
+                case 'test_email':
+                    $r = $mod->sendTestEmail(); $tab = 'settings';
+                    if ($r['ok']) $msg = 'Test e-mail sent to ' . ($mod->loadState()['settings']['alert_email']) . '. Check the inbox (and spam folder).';
+                    break;
                 case 'hangup':  $r = $mod->hangupCall((string)($_POST['channel'] ?? ''), 'local', $actor); if ($r['ok']) $msg = 'Call ended.'; break;
                 case 'settings':
                     $r = $mod->op('settings', [
@@ -83,6 +99,13 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
                         'client_vpn_addr' => $_POST['client_vpn_addr'] ?? '',
                         'client_lan_addr' => $_POST['client_lan_addr'] ?? '',
                         'regen_token' => isset($_POST['regen_token']),
+                        'portal_enabled' => isset($_POST['portal_enabled']),
+                        'regen_portal_token' => isset($_POST['regen_portal_token']),
+                        'alert_email' => $_POST['alert_email'] ?? '',
+                        'smtp_host' => $_POST['smtp_host'] ?? '', 'smtp_port' => $_POST['smtp_port'] ?? 587,
+                        'smtp_security' => $_POST['smtp_security'] ?? 'starttls',
+                        'smtp_user' => $_POST['smtp_user'] ?? '', 'smtp_pass' => $_POST['smtp_pass'] ?? '',
+                        'smtp_from' => $_POST['smtp_from'] ?? '', 'smtp_verify' => !isset($_POST['smtp_noverify']),
                     ], 'local', $actor);
                     if ($r['ok']) $msg = 'Settings saved.';
                     break;
@@ -160,7 +183,7 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
   ?>
   <div class="apiu-tabs" id="apiu-tabs" data-default="<?= h($tab) ?>">
     <nav class="at-bar">
-      <button type="button" data-tab="dash">Dashboard</button>
+      <button type="button" data-tab="dash">Dashboard <span class="at-n at-yel" data-count="dash"></span></button>
       <button type="button" data-tab="users">Users <span class="at-n"><?= count($users) ?></span></button>
       <button type="button" data-tab="history">Sign-in history <span class="at-n" data-count="history"></span></button>
       <button type="button" data-tab="failed">Failed sign-ins <span class="at-n at-bad" data-count="failed"></span></button>
@@ -182,7 +205,7 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
       <tr>
         <td><?= h($u['name']) ?></td>
         <td><?= h($u['reach']) ?></td>
-        <td><code><?= h($u['sip_user']) ?></code></td>
+        <td><code><?= h($u['sip_user']) ?></code><?php if (!empty($u['portal_login'])): ?><br><small class="text-muted">portal: <?= h($u['portal_login']) ?></small><?php endif; ?></td>
         <td><?= h(\ApiUsers\ConfigGen::summary($u)) ?>
             · <?= (int)$u['max_calls'] ?> call(s), <?= $u['max_minutes'] ? (int)$u['max_minutes'] . ' min' : 'no time limit' ?></td>
         <td style="white-space:nowrap">
@@ -235,6 +258,11 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
         <small class="text-muted">0 = no limit</small></div>
       <div class="col-md-2"><label>&nbsp;</label><div class="checkbox">
         <label><input type="checkbox" name="enabled" <?= $f['enabled'] ? 'checked' : '' ?>> Enabled</label></div></div>
+    </div>
+    <div class="row">
+      <div class="col-md-4"><label>User portal login <small class="text-muted">(optional)</small></label>
+        <input class="form-control" name="portal_login" maxlength="100" value="<?= h($f['portal_login'] ?? '') ?>" placeholder="their Authentik user name">
+        <small class="text-muted">Lets this person sign in to the user portal and see their own calls and sign-ins. Someone with several phones (one account per phone): put the <b>same</b> login on each.</small></div>
     </div>
 
     <h4>May call these extensions</h4>
@@ -331,7 +359,58 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
     <p>Remote token (goes in the Docker <code>.env</code> as <code>PBX_REMOTE_TOKEN</code>):
       <code><?= h($s['remote_token']) ?></code>
       <label style="margin-left:1em"><input type="checkbox" name="regen_token"> generate a new one</label></p>
+    <h4 style="margin-top:1.5em">User portal</h4>
+    <p class="text-muted" style="margin-top:0">A separate page (container <code>portal</code> on the gateway, behind NPM + Authentik)
+      where each person sees only their own account: who they can call, signed-in phones, call history, sign-ins and failed
+      attempts, and a button for a new Zoiper password. Link people on their Edit form (User portal login).</p>
+    <div class="checkbox"><label><input type="checkbox" name="portal_enabled" <?= !empty($s['portal_enabled']) ? 'checked' : '' ?>>
+      Turn the user portal on</label></div>
+    <p>Portal token (goes in the Docker <code>.env</code> as <code>PORTAL_TOKEN</code>):
+      <code><?= h($s['portal_token'] ?? '') ?></code>
+      <label style="margin-left:1em"><input type="checkbox" name="regen_portal_token"> generate a new one</label></p>
+
+    <h4 style="margin-top:1.5em">E-mail alerts</h4>
+    <p class="text-muted" style="margin-top:0">Checked once a minute. You get one combined e-mail (at most every 5 minutes, or 1 minute
+      for urgent ones) for: failed sign-ins, wrong DISA PINs, the same account signed in from two places at once, a VPN account
+      on the public door, a locked dial-out code, the kill switch, and denied or risky remote-panel actions.
+      Leave the alert address empty to turn alerts off.</p>
+    <?php $as = $mod->alertStatus(); ?>
+    <div class="row">
+      <div class="col-md-4"><label>Send alerts to</label>
+        <input class="form-control" name="alert_email" value="<?= h($s['alert_email']) ?>" placeholder="admin@example.com"></div>
+      <div class="col-md-4"><label>Sender address</label>
+        <input class="form-control" name="smtp_from" value="<?= h($s['smtp_from']) ?>" placeholder="pbx-alerts@example.com">
+        <small class="text-muted">A real mailbox on your mail server is best.</small></div>
+    </div>
+    <div class="row">
+      <div class="col-md-4"><label>Mail server (SMTP)</label>
+        <input class="form-control" name="smtp_host" value="<?= h($s['smtp_host']) ?>" placeholder="mail.example.com"></div>
+      <div class="col-md-2"><label>Port</label>
+        <input class="form-control" name="smtp_port" value="<?= (int)$s['smtp_port'] ?>"></div>
+      <div class="col-md-2"><label>Security</label>
+        <select class="form-control" name="smtp_security">
+          <?php foreach (['starttls' => 'STARTTLS (587)', 'ssl' => 'SSL/TLS (465)', 'none' => 'None (LAN only)'] as $k => $v): ?>
+            <option value="<?= $k ?>" <?= $s['smtp_security'] === $k ? 'selected' : '' ?>><?= $v ?></option>
+          <?php endforeach; ?>
+        </select></div>
+    </div>
+    <div class="row">
+      <div class="col-md-4"><label>Login (user name)</label>
+        <input class="form-control" name="smtp_user" value="<?= h($s['smtp_user']) ?>" autocomplete="off"></div>
+      <div class="col-md-4"><label>Password</label>
+        <input class="form-control" type="password" name="smtp_pass" autocomplete="new-password"
+               placeholder="<?= $s['smtp_pass'] !== '' ? 'saved (leave empty to keep it)' : '' ?>"></div>
+    </div>
+    <div class="checkbox"><label><input type="checkbox" name="smtp_noverify" <?= $s['smtp_verify'] ? '' : 'checked' ?>>
+      Don't check the mail server's certificate (only for a server on your LAN reached by IP)</label></div>
+    <p class="text-muted">
+      <?php if ($as['last_mail']): ?>Last alert e-mail: <?= h(date('M j H:i', $as['last_mail'])) ?>.<?php endif; ?>
+      <?php if ($as['pending']): ?> <?= (int)$as['pending'] ?> alert(s) waiting to be sent.<?php endif; ?>
+      <?php if ($as['last_error']): ?> <span class="text-danger">Last problem: <?= h($as['last_error']) ?></span><?php endif; ?>
+    </p>
+
     <button class="btn btn-primary" name="apiu_action" value="settings">Save settings</button>
+    <button class="btn btn-default btn-secondary" name="apiu_action" value="test_email">Send test e-mail</button>
   </form>
 
   </section>
@@ -342,7 +421,7 @@ function renderPage(\FreePBX\modules\Apiusers $mod): string
   <table class="table table-condensed table-sm">
     <tr><th>Time (UTC)</th><th>From</th><th>Action</th><th>User</th><th>Detail</th></tr>
     <?php foreach (array_reverse($st['audit']) as $a): ?>
-      <tr><td><?= h($a['t']) ?></td><td><?= h($a['src'] . ' ' . $a['actor']) ?></td><td><?= h($a['op']) ?></td>
+      <tr class="<?= auditClass($a) ?>"><td><?= h($a['t']) ?></td><td><?= h($a['src'] . ' ' . $a['actor']) ?></td><td><?= h($a['op']) ?></td>
           <td><?= h($users[$a['id']]['name'] ?? $a['id']) ?></td><td><?= h($a['detail']) ?></td></tr>
     <?php endforeach; ?>
   </table>

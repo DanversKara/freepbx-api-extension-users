@@ -69,6 +69,8 @@ row `state`). Kamailio has no user database, and the panel stores nothing.
 | `pbx-module/apiusers/assets/live-view.js` | Live view UI (both pages; source copy, synced like share-card.js). DOM built with textContent only |
 | `pbx-module/apiusers/bin/apiusers-presence` | cron (`/etc/cron.d/apiusers`, every minute, as asterisk): `presenceTick()` → kv rows `presence` + `signins` |
 | `scripts/update-pbx.sh` | Run on PBX to update the module in place + regenerate config from saved users |
+| `pbx-module/apiusers/lib/Alerts.php`, `lib/Mailer.php` | Alert rules (what is worth an e-mail, de-dup, digest) and a dependency-free SMTP client |
+| `docker-gateway/portal/` | Optional user portal (Flask, own SSH key → `apiusers-remote --portal`) |
 | `pbx-module/apiusers/views/page.php` | PBX admin page |
 | `pbx-module/apiusers/bin/apiusers-remote` | SSH forced command (JSON in / JSON out) |
 | `pbx-module/apiusers/assets/share-card.js` | Share card (QR, PNG, email, copy, print), all client-side. **Source copy**; `scripts/sync-assets.sh` copies it + `qrcode.js` to `docker-gateway/panel/static/`. The PBX page inlines it (no FreePBX asset routing needed); the panel serves `/static/` |
@@ -80,7 +82,7 @@ row `state`). Kamailio has no user database, and the panel stores nothing.
 | `scripts/setup-docker.sh` | Run on the gateway host |
 | `scripts/proxmox-firewall.sh` | Optional, Proxmox host: rewrites `/etc/pve/firewall/<CT>.fw` (env CT/NPM_IP/PBX_IP) |
 | `docs/npm-authentik.md` | NPM proxy host + Authentik forward-auth |
-| `tests/engine_test.php`, `tests/live_test.php`, `tests/features_test.php` | all must print ALL PASSED. `tests/fixtures/live/` = real Asterisk 20 output (captured on the VPN + Public build, so some rows use the `pub` door) |
+| `tests/engine_test.php`, `tests/live_test.php`, `tests/features_test.php` | all (plus `tests/alerts_test.php`) must print ALL PASSED. `tests/fixtures/live/` = real Asterisk 20 output (captured on the VPN + Public build, so some rows use the `pub` door) |
 
 ## Security invariants. Do not break these.
 
@@ -116,6 +118,15 @@ row `state`). Kamailio has no user database, and the panel stores nothing.
    Feature codes are exact extens → `Goto(from-internal,CODE,1)` after `apiusers-pre`: `[0-9*#]{2,10}`, digits-only
    max 4 digits, never starting 0/1/9, never 911/933/112/N11. Remote (safety lock) may remove but never add codes.
    Directory comes from FreePBX tables `meetme` and `featurecodes` (Apiusers::directory(); null = unreadable).
+10. **User portal** (`docker-gateway/portal`, `Apiusers::portalCall`): own SSH user `apiportal`, own key (`ssh-portal/`),
+   forced command + sudoers allow ONLY `apiusers-remote --portal`; own token `portal_token`; off unless `portal_enabled`.
+   The portal sends the Authentik login; the PBX maps it to EVERY account whose `portal_login` matches (lower-case; one
+   person = one login, one account per phone). Ops: `me` (accounts[] with profile/devices/live calls without channel names,
+   plus combined CDR/sign-ins/failed tagged with `phone`) and `rotate` with `id`, which must be one of that login's accounts
+   (Engine source `portal`, which may ONLY rotate). Never returns the current password or other users' data.
+11. **Alerts** (`lib/Alerts.php` rules, `lib/Mailer.php` SMTP, `cronTick()` from cron only, never from web requests):
+   one digest per >= 5 min (60 s if red), memory in kv `alerts`; failures already in the log when alerts are first
+   enabled are NOT mailed. SMTP password is stored in settings (PBX page only; never returned by any remote op).
 
 ## Verified during the build (sandbox: Asterisk 20, Kamailio 5.7, rtpengine 11)
 
@@ -179,6 +190,15 @@ AstroWarp on cellular: registration, allowed and blocked extensions, 88xx inboun
   BLIP_SECONDS (300) removes the "out" line and keeps the session start. Tested in Chromium on both pages (desktop
   light/dark, 390 px phone with no sideways scroll), including delete-selected landing back on the right tab.
 
+- Build 17.1.0 (Oct 3 2026, sandbox): alert e-mails through a real SMTP server (aiosmtpd, STARTTLS + AUTH LOGIN and plain;
+  cert check refuses self-signed unless turned off; header injection refused); digests for failed sign-in + VPN-on-public-door,
+  then "two places" after the 2-minute overlap; portal in Chromium (desktop dark/light, 390 px phone), stranger login refused,
+  401 without the Authentik header, rotate audited as `portal:<login>`, no secret / other users in the JSON.
+- Dashboard (17.1.0): reach number next to each name; circle = account type (blue VPN / amber PUB) with the small status dot;
+  Live calls card + tile yellow while a call is up; "Signed in now" card red when someone is in two places or a VPN account
+  uses the public door; failed rows red, unknown-username rows orange; Failed tab count glows red while there were failures
+  in the last 24 h; Dashboard tab shows "● N calls"; audit rows colored (red denied/kill, orange hang-up, yellow history/unlock).
+
 ## Ideas / hardening backlog
 
 - Incredible PBX's default iptables trust 192.168.0.0/16. Consider limiting SSH and the web GUI to admin hosts.
@@ -219,4 +239,5 @@ Nothing on the PBX changes, because TLS and SRTP end at the gateway.
 - `/etc/asterisk/pjsip_apiusers.conf` and `extensions_apiusers.conf`
 - The include lines marked `apiusers` in `pjsip_custom.conf` (or `pjsip.endpoint_custom.conf`) and in `extensions_custom.conf`
 - `/usr/local/sbin/apiusers-remote`, `/etc/sudoers.d/apiusers-remote`, and user `apiremote` (`userdel -r apiremote`)
-- `/usr/local/sbin/apiusers-presence` and `/etc/cron.d/apiusers` (Live view sign-in history)
+- `/usr/local/sbin/apiusers-presence` and `/etc/cron.d/apiusers` (Live view sign-in history + alert e-mails)
+- user `apiportal` and `/etc/sudoers.d/apiusers-portal` (only if the user portal key was added)

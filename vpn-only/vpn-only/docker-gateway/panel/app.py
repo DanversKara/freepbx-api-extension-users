@@ -87,6 +87,7 @@ def user_args(form):
         "allowed": form.getlist("allowed"),
         "max_calls": form.get("max_calls", 1),
         "max_minutes": form.get("max_minutes", 120),
+        "portal_login": form.get("portal_login", ""),
     }
     # Only send lists the form actually showed, so a missing section never wipes them.
     if form.get("confs_sent") == "1":

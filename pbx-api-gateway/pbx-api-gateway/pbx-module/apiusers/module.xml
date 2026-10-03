@@ -1,0 +1,30 @@
+<module>
+	<rawname>apiusers</rawname>
+	<repo>local</repo>
+	<name>API Users</name>
+	<version>17.2.0</version>
+	<publisher>Local</publisher>
+	<license>GPLv3+</license>
+	<licenselink>https://www.gnu.org/licenses/gpl-3.0.txt</licenselink>
+	<category>Applications</category>
+	<description>Locked-down SIP accounts (internal / external / 911 / international + extension whitelist) that only work through the Kamailio gateway. Managed here or from the remote Docker panel (with safety lock).</description>
+	<changelog>
+		*17.2.0* Public door follows a changing home IP: GW_PUBLIC_IP=auto or a name (gateway restarts itself on a change), optional Cloudflare DDNS container (DNS only), public IP shown on the PBX page with "Use new IP" banner and alert e-mail; example addresses like 10.x.x.x refused
+		*17.1.1* One portal login can own several phones (one account per phone); plain-language family setup guide (docs/family-setup.md)
+		*17.1.0* E-mail alerts, user portal, dashboard colors (reach number, type colors, live-call and danger highlights), gateway auto-ban
+		*17.0.4* Tabs: Dashboard grid, Users, Sign-in history, Failed sign-ins, Audit log; bulk delete; reconnect blips merged
+		*17.0.3* Per-user conference rooms and feature codes (feature codes: PBX page only, VPN accounts only)
+		*17.0.2* Live view: signed-in phones, calls in progress + hang up, sign-in history, failed sign-ins, DISA unlock
+		*17.0.1* Initial release
+	</changelog>
+	<menuitems>
+		<apiusers>API Users</apiusers>
+	</menuitems>
+	<depends>
+		<version>17.0</version>
+		<module>core</module>
+	</depends>
+	<supported>
+		<version>17.0</version>
+	</supported>
+</module>

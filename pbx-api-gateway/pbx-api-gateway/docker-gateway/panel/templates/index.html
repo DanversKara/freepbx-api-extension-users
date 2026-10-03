@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Users</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d232b; --mute:#6b7380; --line:#e3e6ea;
+          --acc:#1f6feb; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1318; --card:#171c22; --ink:#e6e9ee; --mute:#97a0ad; --line:#2a313a;
+            --acc:#4c8dff; --ok:#3fb950; --warn:#d29922; --bad:#ff6b6b; }
+  }
+  * { box-sizing:border-box }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink) }
+  main { max-width:1180px; margin:0 auto; padding:16px }
+  header { display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap }
+  h1 { font-size:20px; margin:8px 0 } h2 { font-size:16px; margin:22px 0 8px }
+  .mute { color:var(--mute); font-size:13px }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; margin:10px 0 }
+  .msg { border-left:4px solid var(--ok) } .err { border-left:4px solid var(--bad) } .creds { border-left:4px solid var(--warn) }
+  code { background:var(--bg); padding:1px 5px; border-radius:4px; word-break:break-all }
+  table { width:100%; border-collapse:collapse } td,th { text-align:left; padding:7px 6px; border-bottom:1px solid var(--line); vertical-align:top }
+  th { font-size:12px; color:var(--mute); font-weight:600; text-transform:uppercase; letter-spacing:.03em }
+  .pill { display:inline-block; font-size:12px; padding:1px 8px; border-radius:99px; border:1px solid var(--line); margin:1px 2px 1px 0 }
+  .on { color:var(--ok); border-color:var(--ok) } .off { color:var(--mute) } .red { color:var(--bad); border-color:var(--bad) }
+  button, .btn { font:inherit; font-size:13px; padding:5px 10px; border-radius:7px; border:1px solid var(--line);
+                 background:var(--card); color:var(--ink); cursor:pointer; text-decoration:none; display:inline-block }
+  .primary { background:var(--acc); border-color:var(--acc); color:#fff } .danger { color:var(--bad); border-color:var(--bad) }
+  form.inline { display:inline }
+  label { display:block; font-size:13px; color:var(--mute); margin:8px 0 3px }
+  input[type=text], input[type=number] { width:100%; padding:7px 9px; border:1px solid var(--line); border-radius:7px; background:var(--bg); color:var(--ink); font:inherit }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px }
+  .checks { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:4px 12px }
+  .checks label, .chk { color:var(--ink); font-size:14px; margin:4px 0 }
+  .locked { opacity:.6 }
+  .actions { white-space:nowrap } @media (max-width:640px){ .actions { white-space:normal } td,th{ padding:6px 3px } .card > table { display:block; overflow-x:auto } }
+</style>
+</head>
+<body><main>
+<header>
+  <h1>API Users</h1>
+  <span class="mute">signed in as <b>{{ me }}</b> · remote panel ({{ 'safety lock ON' if d.safety_lock else 'safety lock OFF' }})</span>
+</header>
+
+{% if msg %}<div class="card msg">{{ msg }}</div>{% endif %}
+{% if err %}<div class="card err">{{ err }}</div>{% endif %}
+
+{% if creds %}
+<div class="card creds">
+  <b>Zoiper settings</b><br>
+  Username / Auth user: <code>{{ creds.username }}</code><br>
+  Password: <code>{{ creds.secret }}</code><br>
+  Server on AstroWarp: <code>{{ d.client_vpn_addr or '(set on the PBX page)' }}</code><br>
+  Server at home Wi-Fi: <code>{{ d.client_lan_addr }}</code><br>
+  {% set cu = (users | selectattr('sip_user', 'equalto', creds.username) | list | first) or {} %}
+  {% if cu.public and d.client_pub_addr %}Server without VPN: <code>{{ d.client_pub_addr }}</code><br>{% endif %}
+  Transport: <code>UDP</code> · STUN off · no outbound proxy
+  {# ZOIPER-PRO-TODO: add "Server (public TLS)" + "Transport TLS, SRTP SDES" here #}
+  {% set su = (users | selectattr('sip_user', 'equalto', creds.username) | list | first) or {} %}
+  <div id="apiu-share"></div>
+  <script src="/static/qrcode.js"></script>
+  <script src="/static/share-card.js"></script>
+  <script>ApiUsersShareCard(document.getElementById('apiu-share'), {{ {
+      'name': su.name or creds.username, 'username': creds.username, 'password': creds.secret,
+      'reach': (su.reach or '') | string, 'allowed': su.allowed or [],
+      'vpn': d.client_vpn_addr, 'lan': d.client_lan_addr,
+      'pub': (d.client_pub_addr if su.public else ''),
+      'disa': (d.disa_code if (su.public and su.disa) else ''), 'e911': su.e911 or false,
+      'site': 'home phone system'} | tojson }});</script>
+</div>
+{% endif %}
+
+<div class="card">
+  {% if d.kill_switch %}
+    <span class="pill red">KILL SWITCH ENGAGED</span> All API users are offline.
+    <span class="mute">Release it from the PBX page (VPN/LAN) – not possible from here.</span>
+  {% else %}
+    <span class="pill on">Active</span>
+    <form class="inline" method="post" action="/kill" onsubmit="return confirm('Disconnect ALL API users now?')">
+      <input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger">Kill switch</button></form>
+  {% endif %}
+</div>
+
+<div class="apiu-tabs" id="apiu-tabs" data-default="{{ tab }}">
+  <nav class="at-bar">
+    <button type="button" data-tab="dash">Dashboard <span class="at-n at-yel" data-count="dash"></span></button>
+    <button type="button" data-tab="users">Users <span class="at-n">{{ users|length }}</span></button>
+    <button type="button" data-tab="history">Sign-in history <span class="at-n" data-count="history"></span></button>
+    <button type="button" data-tab="failed">Failed sign-ins <span class="at-n at-bad" data-count="failed"></span></button>
+    <button type="button" data-tab="audit">Audit log <span class="at-n">{{ audit|length }}</span></button>
+  </nav>
+  <section data-panel="dash"><div id="apiu-dash"><span class="mute">Loading live status…</span></div></section>
+  <section data-panel="history"><div id="apiu-history"></div></section>
+  <section data-panel="failed"><div id="apiu-failed"></div></section>
+
+<section data-panel="users">
+<h2>Users</h2>
+<div class="card" style="padding:4px 10px">
+<table>
+  <tr><th>Name</th><th>Reach</th><th>Permissions</th><th></th></tr>
+  {% for u in users %}
+  <tr>
+    <td>{{ u.name }}<div class="mute"><code>{{ u.sip_user }}</code>{% if u.portal_login %} · portal: {{ u.portal_login }}{% endif %}</div></td>
+    <td>{{ u.reach }}</td>
+    <td>
+      <span class="pill {{ 'on' if u.enabled else 'red' }}">{{ 'enabled' if u.enabled else 'disabled' }}</span>
+      <span class="pill {{ 'on' if u.external else 'off' }}">external</span>
+      <span class="pill {{ 'on' if u.e911 else 'off' }}">911</span>
+      <span class="pill {{ 'on' if u.international else 'off' }}">intl</span>
+      <span class="pill {{ 'red' if u.public else 'on' }}">{{ 'PUBLIC' if u.public else 'VPN' }}</span>
+      {% if u.public %}<span class="pill {{ 'on' if u.disa else 'off' }}">DISA</span>{% endif %}
+      <div class="mute">may call: {{ u.allowed|join(', ') or 'nobody' }}{% if u.confs %} · conference: {{ u.confs|join(', ') }}{% endif %}{% if u.features %} · codes: {{ u.features|join(', ') }}{% endif %} · {{ u.max_calls }} call(s) · {{ u.max_minutes ~ ' min' if u.max_minutes else 'no time limit' }}</div>
+    </td>
+    <td class="actions">
+      <a class="btn" href="/?edit={{ u.id }}">Edit</a>
+      <form class="inline" method="post" action="/calls/{{ u.id }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button>Calls</button></form>
+      <form class="inline" method="post" action="/rotate/{{ u.id }}" onsubmit="return confirm('New password? The old one stops working now.')"><input type="hidden" name="csrf" value="{{ csrf }}"><button>New password</button></form>
+      <form class="inline" method="post" action="/delete/{{ u.id }}" onsubmit="return confirm('Delete {{ u.name }}?')"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger">Delete</button></form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="mute">No API users yet.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+{% if calls %}
+<h2>Recent calls</h2>
+<div class="card" style="padding:4px 10px"><table>
+  <tr><th>Date</th><th>From</th><th>To</th><th>Result</th><th>Sec</th></tr>
+  {% for c in calls.rows %}<tr><td>{{ c.calldate }}</td><td>{{ c.src }}</td><td>{{ c.dst }}</td><td>{{ c.disposition }}</td><td>{{ c.billsec }}</td></tr>
+  {% else %}<tr><td colspan="5" class="mute">No calls yet.</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+
+{% set f = edit or {'id':'', 'name':'', 'reach':'', 'enabled':True, 'internal':True, 'external':False, 'e911':False, 'international':False, 'allowed':[], 'confs':[], 'features':[], 'max_calls':1, 'max_minutes':120} %}
+<h2>{{ 'Edit ' ~ f.name if edit else 'Add user' }}</h2>
+<form class="card" method="post" action="{{ '/update/' ~ f.id if edit else '/create' }}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <div class="grid">
+    <div><label>Name</label><input type="text" name="name" maxlength="40" required value="{{ f.name }}" placeholder="Brother"></div>
+    <div><label>Reach extension</label><input type="text" name="reach" value="{{ f.reach }}" placeholder="auto (88xx)"></div>
+    <div><label>Max calls at once</label><input type="number" name="max_calls" min="1" max="5" value="{{ f.max_calls }}"></div>
+    <div><label>Max minutes per call</label><input type="number" name="max_minutes" min="0" max="480" value="{{ f.max_minutes }}"></div>
+    <div><label>User portal login <span class="mute">(same login on all of a person's phones)</span></label><input type="text" name="portal_login" maxlength="100" value="{{ f.portal_login or '' }}" placeholder="Authentik user name"></div>
+  </div>
+  <label class="chk"><input type="checkbox" name="enabled" {{ 'checked' if f.enabled }}> Enabled</label>
+  <label class="chk"><input type="checkbox" name="internal" {{ 'checked' if f.internal }}> Allow calls to the extensions ticked below</label>
+  <div class="checks">
+    {% for x in d.local_extensions %}
+      <label><input type="checkbox" name="allowed" value="{{ x }}" {{ 'checked' if x in f.allowed }}> {{ x }}</label>
+    {% endfor %}
+    {% for o in users if o.id != f.id %}
+      <label><input type="checkbox" name="allowed" value="{{ o.reach }}" {{ 'checked' if (o.reach|string) in f.allowed }}> {{ o.reach }} <span class="mute">API: {{ o.name }}</span></label>
+    {% endfor %}
+  </div>
+
+  <h2>Conference rooms</h2>
+  {% if d.conferences %}
+  <input type="hidden" name="confs_sent" value="1">
+  <div class="checks">
+    {% for c in d.conferences %}
+      <label><input type="checkbox" name="confs" value="{{ c.code }}" {{ 'checked' if c.code in (f.confs or []) }}> {{ c.code }} <span class="mute">{{ c.name }}</span></label>
+    {% endfor %}
+  </div>
+  {% else %}<p class="mute">No conference rooms found on the PBX{{ ' (this user has: ' ~ (f.confs|join(', ')) ~ ')' if f.confs }}.</p>{% endif %}
+
+  <h2>Feature codes <span class="mute">🔒 can only be added on the PBX page</span></h2>
+  {% if edit and f.features %}
+    <input type="hidden" name="features_sent" value="1">
+    <div class="checks">
+      {% for c in f.features %}<label><input type="checkbox" name="features" value="{{ c }}" checked> <code>{{ c }}</code></label>{% endfor %}
+    </div>
+    <p class="mute">Untick to remove. Codes like ChanSpy (555) let this person listen to any call on the PBX.</p>
+  {% else %}<p class="mute">None.</p>{% endif %}
+
+  <h2>Outside calls <span class="mute">🔒 can only be turned ON from the PBX page</span></h2>
+  {% if edit %}<p><span class="pill {{ 'red' if f.public else 'on' }}">{{ 'Public account (no VPN, locked down)' if f.public else 'VPN account' }}</span>
+     <span class="mute">Account type can't be changed. New accounts made here are VPN accounts; Public accounts are created on the PBX page.</span></p>{% endif %}
+  {% for k, label in [('external','External (US/Canada)'), ('e911','911 / E911'), ('international','International'), ('disa','DISA dial-out code')] %}
+    {% if edit and f[k] %}
+      <label class="chk"><input type="checkbox" name="{{ k }}_off" value="1"> Turn OFF {{ label }} <span class="mute">(currently on)</span></label>
+    {% else %}
+      <label class="chk locked"><input type="checkbox" disabled> {{ label }} 🔒</label>
+    {% endif %}
+  {% endfor %}
+  <p><button class="primary">{{ 'Save' if edit else 'Create user' }}</button>
+     {% if edit %}<a class="btn" href="/">Cancel</a>{% endif %}</p>
+</form>
+
+</section>
+
+<section data-panel="audit">
+<p class="mute">Every change, including denied attempts and deleted history (newest first). The audit log can't be deleted.</p>
+<div class="card" style="padding:4px 10px"><table>
+  <tr><th>Time (UTC)</th><th>Who</th><th>Action</th><th>Detail</th></tr>
+  {% for a in audit %}<tr class="{{ 'au-bad' if (a.detail or '').startswith('DENIED') or a.op == 'kill' else ('au-warn' if a.op == 'hangup' else ('au-yel' if a.op in ('history_clear', 'disa_unlock') else ('au-ok' if a.op == 'unkill' else ''))) }}"><td class="mute">{{ a.t }}</td><td>{{ a.src }} {{ a.actor }}</td><td>{{ a.op }}</td><td>{{ a.detail }}</td></tr>
+  {% else %}<tr><td colspan="4" class="mute">Nothing yet.</td></tr>{% endfor %}
+</table></div>
+</section>
+</div><!-- /tabs -->
+
+<script src="/static/live-view.js"></script>
+<script>(function () {
+  var tabs = ApiUsersTabs(document.getElementById('apiu-tabs'));
+  var csrf = {{ csrf | tojson }};
+  ApiUsersLive({
+    tabs: tabs, disa: true,
+    dash: document.getElementById('apiu-dash'), history: document.getElementById('apiu-history'), failed: document.getElementById('apiu-failed'),
+    initial: null, url: '/live.json', historyUrl: '/history.json', interval: 10000,
+    hangup: { url: '/hangup', fields: { csrf: csrf } },
+    del: { url: '/history/delete', fields: { csrf: csrf }, idsName: 'ids' }
+  });
+})();</script>
+</main></body></html>

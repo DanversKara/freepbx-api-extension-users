@@ -79,7 +79,7 @@
 
 <div class="apiu-tabs" id="apiu-tabs" data-default="{{ tab }}">
   <nav class="at-bar">
-    <button type="button" data-tab="dash">Dashboard</button>
+    <button type="button" data-tab="dash">Dashboard <span class="at-n at-yel" data-count="dash"></span></button>
     <button type="button" data-tab="users">Users <span class="at-n">{{ users|length }}</span></button>
     <button type="button" data-tab="history">Sign-in history <span class="at-n" data-count="history"></span></button>
     <button type="button" data-tab="failed">Failed sign-ins <span class="at-n at-bad" data-count="failed"></span></button>
@@ -96,7 +96,7 @@
   <tr><th>Name</th><th>Reach</th><th>Permissions</th><th></th></tr>
   {% for u in users %}
   <tr>
-    <td>{{ u.name }}<div class="mute"><code>{{ u.sip_user }}</code></div></td>
+    <td>{{ u.name }}<div class="mute"><code>{{ u.sip_user }}</code>{% if u.portal_login %} · portal: {{ u.portal_login }}{% endif %}</div></td>
     <td>{{ u.reach }}</td>
     <td>
       <span class="pill {{ 'on' if u.enabled else 'red' }}">{{ 'enabled' if u.enabled else 'disabled' }}</span>
@@ -136,6 +136,7 @@
     <div><label>Reach extension</label><input type="text" name="reach" value="{{ f.reach }}" placeholder="auto (88xx)"></div>
     <div><label>Max calls at once</label><input type="number" name="max_calls" min="1" max="5" value="{{ f.max_calls }}"></div>
     <div><label>Max minutes per call</label><input type="number" name="max_minutes" min="0" max="480" value="{{ f.max_minutes }}"></div>
+    <div><label>User portal login <span class="mute">(same login on all of a person's phones)</span></label><input type="text" name="portal_login" maxlength="100" value="{{ f.portal_login or '' }}" placeholder="Authentik user name"></div>
   </div>
   <label class="chk"><input type="checkbox" name="enabled" {{ 'checked' if f.enabled }}> Enabled</label>
   <label class="chk"><input type="checkbox" name="internal" {{ 'checked' if f.internal }}> Allow calls to the extensions ticked below</label>
@@ -185,7 +186,7 @@
 <p class="mute">Every change, including denied attempts and deleted history (newest first). The audit log can't be deleted.</p>
 <div class="card" style="padding:4px 10px"><table>
   <tr><th>Time (UTC)</th><th>Who</th><th>Action</th><th>Detail</th></tr>
-  {% for a in audit %}<tr><td class="mute">{{ a.t }}</td><td>{{ a.src }} {{ a.actor }}</td><td>{{ a.op }}</td><td>{{ a.detail }}</td></tr>
+  {% for a in audit %}<tr class="{{ 'au-bad' if (a.detail or '').startswith('DENIED') or a.op == 'kill' else ('au-warn' if a.op == 'hangup' else ('au-yel' if a.op in ('history_clear', 'disa_unlock') else ('au-ok' if a.op == 'unkill' else ''))) }}"><td class="mute">{{ a.t }}</td><td>{{ a.src }} {{ a.actor }}</td><td>{{ a.op }}</td><td>{{ a.detail }}</td></tr>
   {% else %}<tr><td colspan="4" class="mute">Nothing yet.</td></tr>{% endfor %}
 </table></div>
 </section>

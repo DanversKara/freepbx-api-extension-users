@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ site }} – my phones</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --ink:#1d232b; --mute:#687180; --line:#e2e5ea; --soft:#f7f8fa;
+          --acc:#1f6feb; --ok:#1a7f37; --warn:#9a6700; --bad:#cf222e; --pub:#d4760a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0e1116; --card:#161b22; --ink:#e6e9ee; --mute:#97a0ad; --line:#2a313a; --soft:#1b2129;
+            --acc:#58a6ff; --ok:#3fb950; --warn:#d29922; --bad:#ff7b72; --pub:#e8912d; }
+  }
+  * { box-sizing:border-box }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--ink) }
+  main { max-width:1080px; margin:0 auto; padding:16px }
+  .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px }
+  .brand { font-weight:700; letter-spacing:.02em } .mute { color:var(--mute); font-size:13px }
+  h1.page { font-size:22px; margin:6px 0 14px }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:14px }
+  .card > h2 { margin:0; font-size:13px; text-transform:uppercase; letter-spacing:.05em; padding:10px 16px; background:var(--soft); border-bottom:1px solid var(--line) }
+  .pad { padding:14px 16px }
+  .phones { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px; margin-bottom:14px }
+  .phones .card { margin:0; display:flex; flex-direction:column }
+  .head { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--line) }
+  .badge { width:48px; height:48px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:800; font-size:12px; flex:none }
+  .badge.vpn { background:#1f6feb } .badge.pub { background:var(--pub) }
+  .head h3 { margin:0; font-size:17px }
+  .pill { display:inline-block; font-size:12px; padding:0 8px; border-radius:99px; border:1px solid currentColor; margin:2px 4px 2px 0; white-space:nowrap }
+  .ok { color:var(--ok) } .warn { color:var(--warn) } .bad { color:var(--bad) } .acc { color:var(--acc) }
+  dl { display:grid; grid-template-columns:max-content 1fr; gap:5px 12px; margin:0 }
+  dt { color:var(--mute); font-size:13px } dd { margin:0; word-break:break-all; font-size:14px }
+  code { background:var(--soft); border:1px solid var(--line); padding:1px 6px; border-radius:5px; font-size:13px }
+  .row { display:flex; gap:10px; align-items:center; padding:8px 16px; border-bottom:1px solid var(--line) }
+  .dot { width:10px; height:10px; border-radius:50%; flex:none } .grow { flex:1; min-width:0 }
+  .empty { padding:10px 16px; color:var(--mute); font-size:14px; border-bottom:1px solid var(--line) }
+  details { border-top:1px solid var(--line) } summary { cursor:pointer; padding:10px 16px; font-weight:600; font-size:14px }
+  details .pad { padding-top:0 }
+  ul.list { margin:0; padding:0; list-style:none } ul.list li { padding:3px 0 }
+  .foot { margin-top:auto; padding:12px 16px; border-top:1px solid var(--line); background:var(--soft) }
+  button { font:inherit; font-size:14px; padding:7px 13px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer }
+  .primary { background:var(--acc); border-color:var(--acc); color:#fff }
+  .note { border-left:4px solid var(--warn); background:rgba(210,153,34,.10); padding:8px 12px; border-radius:6px; margin:8px 0; font-size:14px }
+  .alert { border-left:4px solid var(--bad); background:rgba(207,34,46,.08); padding:8px 12px; border-radius:6px; margin:8px 0; font-size:14px }
+  .good { border-left:4px solid var(--ok); background:rgba(26,127,55,.08); padding:8px 12px; border-radius:6px; margin:8px 0; font-size:14px }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); padding:0 10px; background:var(--soft); overflow-x:auto }
+  .tabs button { border:0; border-bottom:3px solid transparent; border-radius:0; background:none; padding:10px 12px; opacity:.7; white-space:nowrap }
+  .tabs button.on { opacity:1; font-weight:600; border-bottom-color:var(--acc) }
+  .n { font-size:11.5px; background:rgba(128,128,128,.2); border-radius:99px; padding:0 7px; margin-left:4px }
+  .scroll { overflow-x:auto } table { width:100%; border-collapse:collapse }
+  td, th { text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); font-size:14px; white-space:nowrap }
+  th { font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--mute) }
+  tr.badrow td { background:rgba(207,34,46,.07) }
+  [data-pane] { display:none } [data-pane].on { display:block }
+  .timer { font-variant-numeric:tabular-nums; font-weight:700 }
+  @media (max-width:420px) { .phones { grid-template-columns:minmax(0,1fr) } }
+</style>
+</head>
+<body><main>
+<div class="top">
+  <span class="brand">📞 {{ site }}</span>
+  <span class="mute">signed in as <b>{{ login }}</b></span>
+</div>
+
+{% if err %}<div class="alert">{{ err }}</div>{% endif %}
+
+{% if not d.ok %}
+  <div class="card"><div class="pad">
+    <h1 style="margin-top:0;font-size:20px">Hi!</h1>
+    <p>{{ d.error }}</p>
+  </div></div>
+{% else %}
+{% set accts = d.accounts %}
+<h1 class="page">Your phone{{ 's' if accts|length != 1 }} <span class="mute">({{ accts|length }})</span></h1>
+
+{% if creds %}
+{% set ca = (accts | selectattr('id', 'equalto', creds.id) | list | first) %}
+{% if ca %}{% set m = ca.me %}
+<div class="card" style="border-color:var(--warn)">
+  <h2>New password for {{ m.name }} (shown once)</h2>
+  <div class="pad">
+    <div class="good">The old password for <b>{{ m.name }}</b> no longer works. Type this one into that phone now
+      (Zoiper: Settings → Accounts → this account → Password). Your other phones are not affected.</div>
+    <dl>
+      <dt>Username</dt><dd><code>{{ creds.username }}</code></dd>
+      <dt>Password</dt><dd><code>{{ creds.secret }}</code></dd>
+    </dl>
+    <div id="apiu-share" style="margin-top:10px"></div>
+    <script src="/static/qrcode.js"></script>
+    <script src="/static/share-card.js"></script>
+    <script>ApiUsersShareCard(document.getElementById('apiu-share'), {{ {
+        'name': m.name, 'username': creds.username, 'password': creds.secret, 'reach': m.reach,
+        'allowed': (m.can_call | map(attribute='number') | list), 'vpn': (m.servers or {}).get('VPN', ''), 'lan': (m.servers or {}).get('Home Wi-Fi', ''),
+        'pub': (m.servers or {}).get('Without VPN', ''), 'disa': m.disa_code, 'e911': m.e911, 'site': site} | tojson }});</script>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
+<div class="phones">
+{% for a in accts %}{% set m = a.me %}
+  <div class="card">
+    <div class="head">
+      <div class="badge {{ 'pub' if m.public else 'vpn' }}" title="{{ 'Public account' if m.public else 'VPN account' }}">{{ 'PUB' if m.public else 'VPN' }}</div>
+      <div class="grow">
+        <h3>{{ m.name }}</h3>
+        <div class="mute">People at home dial <b style="color:var(--ink)">{{ m.reach }}</b> to ring this phone</div>
+        <div>
+          {% if m.kill_switch %}<span class="pill bad">switched off right now</span>
+          {% elif not m.enabled %}<span class="pill bad">turned off</span>
+          {% else %}<span class="pill ok">active</span>{% endif %}
+          <span class="pill {{ 'warn' if m.public else 'acc' }}">{{ 'no VPN needed' if m.public else 'VPN / home Wi-Fi' }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="now" data-acct="{{ a.id }}"></div>
+    <details>
+      <summary>Zoiper settings for this phone</summary>
+      <div class="pad">
+        <dl>
+          <dt>Username</dt><dd><code>{{ m.username }}</code></dd>
+          <dt>Password</dt><dd><span class="mute">hidden – get a new one below if you lost it</span></dd>
+          {% for label, addr in (m.servers or {}).items() %}<dt>Server ({{ label }})</dt><dd><code>{{ addr }}</code></dd>{% endfor %}
+          <dt>Transport</dt><dd>UDP · STUN off</dd>
+        </dl>
+      </div>
+    </details>
+    <details>
+      <summary>What this phone can call</summary>
+      <div class="pad">
+        {% if m.can_call %}<ul class="list">{% for x in m.can_call %}<li><b>{{ x.number }}</b> <span class="mute">{{ x.name }}</span></li>{% endfor %}</ul>
+        {% else %}<p class="mute" style="margin:0">No home extensions yet.</p>{% endif %}
+        {% if m.conferences %}<p style="margin:10px 0 2px"><b>Conference rooms</b></p>
+          <ul class="list">{% for x in m.conferences %}<li><b>{{ x.number }}</b> <span class="mute">{{ x.name }}</span></li>{% endfor %}</ul>{% endif %}
+        {% if m.feature_codes %}<p style="margin:10px 0 2px"><b>Feature codes</b></p><p style="margin:0">{% for c in m.feature_codes %}<code>{{ c }}</code> {% endfor %}</p>{% endif %}
+        <p style="margin:10px 0 2px"><b>Outside numbers</b></p>
+        {% if m.external %}<div>US / Canada: <span class="ok">yes</span>{% if m.international %} · international: <span class="ok">yes</span>{% endif %}</div>
+        {% elif m.disa %}<div>Dial <code>{{ m.disa_code }}</code>, your PIN and <code>#</code>, then the number and <code>#</code>.</div>
+        {% else %}<div class="mute">Not on this phone.</div>{% endif %}
+        {% if m.e911 %}<div class="note">911 works, but sends help to the <b>home address of this phone system</b>, not to where you are.</div>
+        {% else %}<div class="alert"><b>No 911 on this phone.</b> Use your mobile phone for emergencies.</div>{% endif %}
+      </div>
+    </details>
+    <div class="foot">
+      <form method="post" action="/new-password" data-name="{{ m.name }}"
+            onsubmit="return confirm('Get a new password for ' + this.dataset.name + '? Its old password stops working right away, and you will need to type the new one into that phone.')">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ a.id }}">
+        <button class="primary" {{ 'disabled' if m.kill_switch or not m.enabled }}>Get a new password</button>
+      </form>
+    </div>
+  </div>
+{% endfor %}
+</div>
+
+<div class="card">
+  <div class="tabs">
+    <button type="button" data-tab="calls" class="on">Calls <span class="n">{{ d.calls|length }}</span></button>
+    <button type="button" data-tab="signins">Sign-ins <span class="n">{{ d.signins|length }}</span></button>
+    <button type="button" data-tab="failed">Failed attempts <span class="n" style="{{ 'background:var(--bad);color:#fff' if d.failed }}">{{ d.failed|length }}</span></button>
+  </div>
+  <div data-pane="calls" class="on">
+    {% if d.calls_error %}<div class="empty">{{ d.calls_error }}</div>{% endif %}
+    <div class="scroll"><table>
+      <tr><th>When</th><th>Phone</th><th>From</th><th>To</th><th>Result</th><th>Length</th></tr>
+      {% for c in d.calls %}<tr><td>{{ c.calldate }}</td><td>{{ c.phone }}</td><td>{{ c.src }}</td><td>{{ c.dst }}</td>
+        <td class="{{ 'ok' if c.disposition == 'ANSWERED' else 'mute' }}">{{ c.disposition|title }}</td>
+        <td>{{ (c.billsec|int // 60) }}:{{ '%02d' % (c.billsec|int % 60) }}</td></tr>
+      {% else %}<tr><td colspan="6" class="mute">No calls yet.</td></tr>{% endfor %}
+    </table></div>
+  </div>
+  <div data-pane="signins">
+    <div class="scroll"><table>
+      <tr><th>When</th><th>Phone</th><th>What</th><th>How</th><th>From address</th><th>App</th></tr>
+      {% for e in d.signins %}<tr><td class="ts" data-t="{{ e.t }}"></td><td>{{ e.phone }}</td>
+        <td>{{ {'in':'Signed in','out':'Signed out','moved':'Changed network','seen':'Signed in'}[e.ev] or e.ev }}{% if e.ev == 'out' and e.dur %} <span class="mute">after {{ (e.dur // 60) }} min</span>{% endif %}</td>
+        <td>{{ {'vpn':'VPN','lan':'Home Wi-Fi','pub':'Without VPN'}[e.door] or e.door }}</td><td><code>{{ e.ip }}</code></td><td class="mute">{{ e.app }}</td></tr>
+      {% else %}<tr><td colspan="6" class="mute">Nothing recorded yet.</td></tr>{% endfor %}
+    </table></div>
+  </div>
+  <div data-pane="failed">
+    <p class="mute" style="margin:10px 16px 0">Someone tried one of your phones' usernames with a wrong password (or a wrong dial-out PIN).
+      If it wasn't you, get a new password for that phone.</p>
+    <div class="scroll"><table>
+      <tr><th>When</th><th>Phone</th><th>What happened</th><th>How</th></tr>
+      {% for f in d.failed %}<tr class="badrow"><td class="ts" data-t="{{ f.t }}"></td><td>{{ f.phone }}</td><td class="bad">{{ f.kind|capitalize }}</td>
+        <td>{{ {'vpn':'VPN','lan':'Home Wi-Fi','pub':'Without VPN'}[f.door] or (f.server or '—') }}</td></tr>
+      {% else %}<tr><td colspan="4" class="mute">No failed attempts. 👍</td></tr>{% endfor %}
+    </table></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var DOOR = { vpn: 'VPN', lan: 'Home Wi-Fi', pub: 'Without VPN' };
+  function el(t, a, kids) { var e = document.createElement(t); if (a) for (var k in a) { if (k === 'text') e.textContent = a[k]; else if (k === 'class') e.className = a[k]; else e.setAttribute(k, a[k]); }
+    (kids || []).forEach(function (c) { if (c) e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); }); return e; }
+  function when(t) { var d = new Date(t * 1000), n = new Date(); var s = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    return d.toDateString() === n.toDateString() ? 'Today ' + s : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ' ' + s; }
+  function clock(s) { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + ('0' + s % 60).slice(-2); }
+  document.querySelectorAll('.ts').forEach(function (c) { c.textContent = when(+c.getAttribute('data-t')); });
+  document.querySelectorAll('.tabs button').forEach(function (b) { b.addEventListener('click', function () {
+    document.querySelectorAll('.tabs button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    document.querySelectorAll('[data-pane]').forEach(function (p) { p.classList.toggle('on', p.getAttribute('data-pane') === b.getAttribute('data-tab')); });
+  }); });
+  var got = Date.now();
+  function render(accounts) {
+    got = Date.now();
+    (accounts || []).forEach(function (a) {
+      var box = document.querySelector('.now[data-acct="' + a.id + '"]'); if (!box) return;
+      box.textContent = '';
+      var devs = a.devices || [], calls = a.live_calls || [];
+      if (!devs.length && !calls.length) { box.appendChild(el('div', { 'class': 'empty', text: 'Not signed in right now.' })); return; }
+      var ips = {}; devs.forEach(function (x) { ips[x.ip] = 1; });
+      if (Object.keys(ips).length > 1) box.appendChild(el('div', { 'class': 'alert', style: 'margin:8px 16px', text: 'This phone account is signed in from ' + Object.keys(ips).length + ' places at once. If one is not yours, get a new password.' }));
+      devs.forEach(function (x) {
+        var on = x.status === 'Avail' || x.status === 'Reachable';
+        box.appendChild(el('div', { 'class': 'row' }, [el('span', { 'class': 'dot', style: 'background:' + (on ? 'var(--ok)' : 'var(--warn)') }),
+          el('div', { 'class': 'grow' }, [el('div', null, [el('b', { text: on ? 'Online' : 'Not answering' }), ' · ' + (DOOR[x.door] || x.door || '')]),
+            el('div', { 'class': 'mute', text: (x.app || 'phone') + ' · ' + x.ip })])]));
+      });
+      calls.forEach(function (c) {
+        box.appendChild(el('div', { 'class': 'row', style: 'background:rgba(210,153,34,.14)' }, [el('span', { text: c.direction === 'in' ? '↓' : '↑' }),
+          el('div', { 'class': 'grow' }, [el('b', { text: (c.direction === 'in' ? 'Call from ' : 'Calling ') + (c.other || '…') }), el('div', { 'class': 'mute', text: c.state })]),
+          el('span', { 'class': 'timer', 'data-s': String(c.seconds), text: clock(c.seconds) })]));
+      });
+    });
+  }
+  render({{ accts | tojson }});
+  setInterval(function () { var add = (Date.now() - got) / 1000; document.querySelectorAll('.timer').forEach(function (t) { t.textContent = clock(+t.getAttribute('data-s') + add); }); }, 1000);
+  setInterval(function () { if (document.hidden) return;
+    fetch('/me.json', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) { if (d && d.ok) render(d.accounts); }).catch(function () {}); }, 15000);
+})();
+</script>
+{% endif %}
+</main></body></html>

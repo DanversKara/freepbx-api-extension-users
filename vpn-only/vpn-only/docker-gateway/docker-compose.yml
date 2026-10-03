@@ -25,3 +25,14 @@ services:
     volumes:
       - ./ssh:/ssh:ro
     restart: unless-stopped
+
+  # Optional user portal (each person sees only their own account). Own SSH key in ./ssh-portal,
+  # which on the PBX can only run "apiusers-remote --portal". Like the panel: LAN IP only, NPM in front.
+  portal:
+    build: ./portal
+    env_file: .env
+    ports:
+      - "${GW_LAN_IP}:8010:8010"
+    volumes:
+      - ./ssh-portal:/ssh:ro
+    restart: unless-stopped

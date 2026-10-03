@@ -20,6 +20,7 @@ echo "==> logic tests"
 php "$HERE/tests/engine_test.php" | tail -1
 php "$HERE/tests/live_test.php" | tail -1
 php "$HERE/tests/features_test.php" | tail -1
+php "$HERE/tests/alerts_test.php" | tail -1
 
 echo "==> copying module to $DST"
 cp -a "$HERE/pbx-module/apiusers/." "$DST/"

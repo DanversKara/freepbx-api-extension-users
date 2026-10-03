@@ -18,10 +18,14 @@ namespace FreePBX\modules;
 require_once __DIR__ . '/lib/Engine.php';
 require_once __DIR__ . '/lib/ConfigGen.php';
 require_once __DIR__ . '/lib/Live.php';
+require_once __DIR__ . '/lib/Alerts.php';
+require_once __DIR__ . '/lib/Mailer.php';
 
 use ApiUsers\Engine;
 use ApiUsers\ConfigGen;
 use ApiUsers\Live;
+use ApiUsers\Alerts;
+use ApiUsers\Mailer;
 
 class Apiusers extends \FreePBX_Helpers implements \BMO
 {
@@ -441,8 +445,78 @@ class Apiusers extends \FreePBX_Helpers implements \BMO
             'disa_locks' => $locks,
             'kill_switch' => !empty($s['kill_switch']),
             'users' => array_values(array_map(fn($u) => ['id' => $u['id'], 'name' => $u['name'],
-                'public' => !empty($u['public']), 'enabled' => !empty($u['enabled'])], $st['users'])),
+                'public' => !empty($u['public']), 'enabled' => !empty($u['enabled']), 'reach' => (string)$u['reach']], $st['users'])),
         ];
+    }
+
+    /**
+     * Once a minute from cron (bin/apiusers-presence): record sign-ins, then check for alerts and
+     * send at most one digest e-mail. Returns a short status line.
+     */
+    public function cronTick(): string
+    {
+        $st = $this->loadState();
+        $devices = $this->devices($st);
+        $events = $this->presenceTick($devices, $st);
+        $msg = count($events) . ' change(s)';
+        $s = $st['settings'];
+        if (($s['alert_email'] ?? '') === '') return $msg . ', alerts off';
+        $locked = false;
+        try { $q = $this->db->query("SELECT GET_LOCK('apiusers_alerts', 3)"); $locked = $q && (int)$q->fetchColumn() === 1; } catch (\Throwable $e) {}
+        try {
+            $now = time();
+            $mem = Alerts::collect([
+                'devices' => $devices, 'failed' => $this->failedList($st),
+                'locks' => Live::disaLocks($this->cli('database show apiusers_disa'), $now),
+                'audit' => $st['audit'], 'users' => $st['users'],
+            ], $this->kvGet('alerts'), $now);
+            if (Alerts::ready($mem, $now)) {
+                [$subject, $body] = Alerts::compose($mem['pending']);
+                $err = $this->sendMail($s, $s['alert_email'], $subject, $body);
+                if ($err === null) {
+                    $msg .= ', e-mailed ' . count($mem['pending']) . ' alert(s)';
+                    $mem['pending'] = [];
+                    $mem['last_mail'] = $now;
+                    $mem['last_error'] = '';
+                } else {
+                    $msg .= ', e-mail FAILED: ' . $err;                  // keep them pending, retry next minute
+                    $mem['last_error'] = $err;
+                    $mem['last_mail'] = $now - Alerts::GAP + 60;
+                }
+            } elseif (!empty($mem['pending'])) {
+                $msg .= ', ' . count($mem['pending']) . ' alert(s) waiting';
+            }
+            $this->kvSet('alerts', $mem);
+        } finally {
+            if ($locked) { try { $this->db->query("SELECT RELEASE_LOCK('apiusers_alerts')"); } catch (\Throwable $e) {} }
+        }
+        return $msg;
+    }
+
+    private function sendMail(array $s, string $to, string $subject, string $body): ?string
+    {
+        return Mailer::send(['host' => $s['smtp_host'], 'port' => $s['smtp_port'], 'security' => $s['smtp_security'],
+            'user' => $s['smtp_user'], 'pass' => $s['smtp_pass'], 'from' => $s['smtp_from'], 'verify' => $s['smtp_verify']],
+            $to, $subject, $body);
+    }
+
+    /** "Send test e-mail" button on the PBX page. */
+    public function sendTestEmail(): array
+    {
+        $s = $this->loadState()['settings'];
+        if (($s['alert_email'] ?? '') === '') return ['ok' => false, 'error' => 'Fill in and save the alert e-mail address first.'];
+        $err = $this->sendMail($s, $s['alert_email'], '[PBX notice] Test e-mail from API Users',
+            "This is a test from the API Users module on your PBX.\n\nIf you can read this, alert e-mails work. You'll get one when someone\n"
+            . "fails to sign in, signs in from two places at once, a VPN account uses the public door,\n"
+            . "a dial-out code gets locked, or the kill switch / remote panel is used in a risky way.\n");
+        return $err === null ? ['ok' => true] : ['ok' => false, 'error' => 'Test e-mail failed: ' . $err];
+    }
+
+    /** Last mail problem, shown under the alert settings. */
+    public function alertStatus(): array
+    {
+        $m = $this->kvGet('alerts');
+        return ['last_mail' => (int)($m['last_mail'] ?? 0), 'last_error' => (string)($m['last_error'] ?? ''), 'pending' => count($m['pending'] ?? [])];
     }
 
     /** Sign-in history, newest first. Old entries without an id get a stable one. */
@@ -567,6 +641,89 @@ class Apiusers extends \FreePBX_Helpers implements \BMO
             return $this->hangupCall((string)($args['channel'] ?? ''), 'remote', $actor);
         }
         return $this->op($op, $args, 'remote', $actor);
+    }
+
+    // ------------------------------------------------------------- portal
+
+    /**
+     * Called by bin/apiusers-remote --portal (SSH forced command for the user portal container, user
+     * `apiportal`). $req = {"token":"...","op":"me|rotate","login":"<Authentik user name>","id":"<account, rotate only>"}
+     * One login can own SEVERAL accounts (one per phone): every account whose portal_login matches.
+     * The portal can only ever see / change those accounts.
+     */
+    public function portalCall(array $req): array
+    {
+        $st = $this->loadState();
+        $s = $st['settings'];
+        $token = (string)($s['portal_token'] ?? '');
+        if ($token === '' || !hash_equals($token, (string)($req['token'] ?? ''))) return ['ok' => false, 'error' => 'bad token'];
+        if (empty($s['portal_enabled'])) return ['ok' => false, 'error' => 'The user portal is turned off on the PBX.'];
+        $login = strtolower(trim((string)($req['login'] ?? '')));
+        $mine = [];
+        if ($login !== '') foreach ($st['users'] as $x) if (strtolower((string)($x['portal_login'] ?? '')) === $login) $mine[$x['id']] = $x;
+        if (!$mine) return ['ok' => false, 'error' => 'No phone account is linked to "' . $login . '" yet. Ask the person who runs the phone system to add it.'];
+        uasort($mine, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+        $actor = 'portal:' . preg_replace('/[^a-z0-9@._+-]/', '', $login);
+        $op = (string)($req['op'] ?? '');
+
+        if ($op === 'rotate') {
+            $id = (string)($req['id'] ?? '');
+            if (count($mine) === 1 && $id === '') $id = array_key_first($mine);
+            if (!isset($mine[$id])) return ['ok' => false, 'error' => 'That phone is not one of yours.'];
+            $r = $this->op('rotate', ['id' => $id], 'portal', $actor);
+            if (empty($r['ok'])) return $r;
+            return ['ok' => true, 'id' => $id, 'username' => $r['username'], 'secret' => $r['secret']];
+        }
+        if ($op !== 'me') return ['ok' => false, 'error' => 'unknown request'];
+
+        $devAll = $this->devices($st);
+        $callsAll = Live::calls($this->cli('core show channels concise'), $this->cli('group show channels'), $st['users'], $devAll);
+        $signAll = $this->signinList();
+        $failAll = $this->failedList($st);
+        $accounts = []; $cdr = []; $sign = []; $fail = []; $cdrErr = '';
+        foreach ($mine as $id => $u) {
+            $devices = array_values(array_filter($devAll, fn($d) => $d['user_id'] === $id));
+            foreach ($devices as &$d) unset($d['key']);
+            unset($d);
+            $accounts[] = ['id' => $id] + $this->portalProfile($u, $s) + [
+                'devices' => $devices,
+                'live_calls' => array_values(array_map(fn($c) => array_diff_key($c, ['channel' => 1, 'uniqueid' => 1]),
+                                    array_filter($callsAll, fn($c) => $c['user_id'] === $id))),
+            ];
+            $c = $this->calls($id, 100);
+            if ($c['ok']) foreach ($c['calls'] as $row) $cdr[] = $row + ['phone' => $u['name']];
+            else $cdrErr = 'Call history is not available right now.';
+            foreach ($signAll as $e) if ($e['user_id'] === $id) $sign[] = $e + ['phone' => $u['name']];
+            foreach ($failAll as $f) if (($f['user_id'] ?? '') === $id) $fail[] = $f + ['phone' => $u['name']];
+        }
+        usort($cdr, fn($a, $b) => strcmp((string)$b['calldate'], (string)$a['calldate']));
+        usort($sign, fn($a, $b) => $b['t'] <=> $a['t']);
+        usort($fail, fn($a, $b) => $b['t'] <=> $a['t']);
+        return ['ok' => true, 'now' => time(), 'accounts' => $accounts,
+                'calls' => array_slice($cdr, 0, 150), 'calls_error' => $cdrErr,
+                'signins' => array_slice($sign, 0, 150), 'failed' => array_slice($fail, 0, 150)];
+    }
+
+    /** What a user may see about their own account (never the password or anything about others). */
+    private function portalProfile(array $u, array $s): array
+    {
+        $names = $this->localExtensions();
+        $rooms = $this->directory()['confs'] ?? [];
+        $byReach = [];
+        foreach ($this->loadState()['users'] as $o) $byReach[(string)$o['reach']] = $o['name'];
+        $pub = !empty($u['public']);
+        return ['me' => [
+            'name' => $u['name'], 'reach' => (string)$u['reach'], 'username' => $u['sip_user'], 'enabled' => !empty($u['enabled']),
+            'public' => $pub, 'external' => !empty($u['external']), 'e911' => !empty($u['e911']), 'international' => !empty($u['international']),
+            'disa' => !empty($u['disa']), 'disa_code' => (!empty($u['disa']) ? (string)($s['disa_code'] ?? '') : ''),
+            'max_calls' => (int)$u['max_calls'], 'max_minutes' => (int)$u['max_minutes'],
+            'can_call' => array_map(fn($x) => ['number' => (string)$x, 'name' => $names[$x] ?? ($byReach[$x] ?? '')], array_values($u['internal'] ? $u['allowed'] : [])),
+            'conferences' => array_map(fn($x) => ['number' => (string)$x, 'name' => $rooms[$x] ?? ''], array_values($u['confs'] ?? [])),
+            'feature_codes' => $pub ? [] : array_values($u['features'] ?? []),
+            'servers' => array_filter(['VPN' => $s['client_vpn_addr'], 'Home Wi-Fi' => $s['client_lan_addr'],
+                                       'Without VPN' => $pub ? $s['client_pub_addr'] : ''], fn($v) => $v !== ''),
+            'kill_switch' => !empty($s['kill_switch']),
+        ]];
     }
 
     // --------------------------------------------------------------- page
